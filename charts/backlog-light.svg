@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <title id="t">Order backlog at year-end, 2015–2025</title>
+  <desc id="d">Column chart. Backlog was about 1.1 to 1.4 billion euros from 2015 to 2020, then rose to 3.5 billion in 2022 and about 4.2 billion in 2025.</desc>
+  <rect width="760" height="420" rx="8" fill="#fcfcfb"/>
+  <text x="20" y="30" font-size="17" font-weight="600" fill="#0b0b0b">Order backlog at year-end, 2015–2025</text>
+  <text x="20" y="52" font-size="13" fill="#52514e">€ million · ≈€4.3bn at June 2026 · 2015, 2016 and 2021 derived from reported growth rates</text>
+  <line x1="64" y1="376.0" x2="732" y2="376.0" stroke="#c3c2b7" stroke-width="1" shape-rendering="crispEdges"/>
+  <text x="56" y="380.0" font-size="12" fill="#898781" text-anchor="end" style="font-variant-numeric: tabular-nums">0</text>
+  <line x1="64" y1="321.6" x2="732" y2="321.6" stroke="#e1e0d9" stroke-width="1" shape-rendering="crispEdges"/>
+  <text x="56" y="325.6" font-size="12" fill="#898781" text-anchor="end" style="font-variant-numeric: tabular-nums">1,000</text>
+  <line x1="64" y1="267.2" x2="732" y2="267.2" stroke="#e1e0d9" stroke-width="1" shape-rendering="crispEdges"/>
+  <text x="56" y="271.2" font-size="12" fill="#898781" text-anchor="end" style="font-variant-numeric: tabular-nums">2,000</text>
+  <line x1="64" y1="212.8" x2="732" y2="212.8" stroke="#e1e0d9" stroke-width="1" shape-rendering="crispEdges"/>
+  <text x="56" y="216.8" font-size="12" fill="#898781" text-anchor="end" style="font-variant-numeric: tabular-nums">3,000</text>
+  <line x1="64" y1="158.4" x2="732" y2="158.4" stroke="#e1e0d9" stroke-width="1" shape-rendering="crispEdges"/>
+  <text x="56" y="162.4" font-size="12" fill="#898781" text-anchor="end" style="font-variant-numeric: tabular-nums">4,000</text>
+  <line x1="64" y1="104.0" x2="732" y2="104.0" stroke="#e1e0d9" stroke-width="1" shape-rendering="crispEdges"/>
+  <text x="56" y="108.0" font-size="12" fill="#898781" text-anchor="end" style="font-variant-numeric: tabular-nums">5,000</text>
+  <text x="94.4" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2015</text>
+  <text x="155.1" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2016</text>
+  <text x="215.8" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2017</text>
+  <text x="276.5" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2018</text>
+  <text x="337.3" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2019</text>
+  <text x="398.0" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2020</text>
+  <text x="458.7" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2021</text>
+  <text x="519.5" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2022</text>
+  <text x="580.2" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2023</text>
+  <text x="640.9" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2024</text>
+  <text x="701.6" y="398" font-size="12" fill="#898781" text-anchor="middle" style="font-variant-numeric: tabular-nums">2025</text>
+  <g><title>2015 backlog: €1,095m</title><path d="M82.4,376.0 L82.4,320.4 A4,4 0 0 1 86.4,316.4 L102.4,316.4 A4,4 0 0 1 106.4,320.4 L106.4,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2016 backlog: €1,145m</title><path d="M143.1,376.0 L143.1,317.7 A4,4 0 0 1 147.1,313.7 L163.1,313.7 A4,4 0 0 1 167.1,317.7 L167.1,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2017 backlog: €1,240m</title><path d="M203.8,376.0 L203.8,312.5 A4,4 0 0 1 207.8,308.5 L223.8,308.5 A4,4 0 0 1 227.8,312.5 L227.8,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2018 backlog: €1,261m</title><path d="M264.5,376.0 L264.5,311.4 A4,4 0 0 1 268.5,307.4 L284.5,307.4 A4,4 0 0 1 288.5,311.4 L288.5,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2019 backlog: €1,386m</title><path d="M325.3,376.0 L325.3,304.6 A4,4 0 0 1 329.3,300.6 L345.3,300.6 A4,4 0 0 1 349.3,304.6 L349.3,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2020 backlog: €1,210m</title><path d="M386.0,376.0 L386.0,314.2 A4,4 0 0 1 390.0,310.2 L406.0,310.2 A4,4 0 0 1 410.0,314.2 L410.0,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2021 backlog: €1,893m</title><path d="M446.7,376.0 L446.7,277.0 A4,4 0 0 1 450.7,273.0 L466.7,273.0 A4,4 0 0 1 470.7,277.0 L470.7,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2022 backlog: €3,466m</title><path d="M507.5,376.0 L507.5,191.4 A4,4 0 0 1 511.5,187.4 L527.5,187.4 A4,4 0 0 1 531.5,191.4 L531.5,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2023 backlog: €4,122m</title><path d="M568.2,376.0 L568.2,155.7 A4,4 0 0 1 572.2,151.7 L588.2,151.7 A4,4 0 0 1 592.2,155.7 L592.2,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2024 backlog: €4,290m</title><path d="M628.9,376.0 L628.9,146.7 A4,4 0 0 1 632.9,142.7 L648.9,142.7 A4,4 0 0 1 652.9,146.7 L652.9,376.0 Z" fill="#2a78d6"/></g>
+  <g><title>2025 backlog: €4,190m</title><path d="M689.6,376.0 L689.6,152.0 A4,4 0 0 1 693.6,148.0 L709.6,148.0 A4,4 0 0 1 713.6,152.0 L713.6,376.0 Z" fill="#2a78d6"/></g>
+  <text x="94.4" y="308.4" font-size="12" font-weight="400" fill="#52514e" text-anchor="middle" style="font-variant-numeric: tabular-nums">1,095</text>
+  <text x="398.0" y="302.2" font-size="12" font-weight="400" fill="#52514e" text-anchor="middle" style="font-variant-numeric: tabular-nums">1,210</text>
+  <text x="519.5" y="179.4" font-size="12" font-weight="400" fill="#52514e" text-anchor="middle" style="font-variant-numeric: tabular-nums">3,466</text>
+  <text x="701.6" y="140.0" font-size="12" font-weight="400" fill="#52514e" text-anchor="middle" style="font-variant-numeric: tabular-nums">4,190</text>
+</svg>

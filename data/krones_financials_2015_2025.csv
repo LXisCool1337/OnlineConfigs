@@ -1,0 +1,12 @@
+year,revenue_eur_m,order_intake_eur_m,order_backlog_eur_m,ebitda_eur_m,ebt_eur_m,net_income_eur_m,eps_eur,dps_eur,fcf_reported_eur_m,fcf_before_mna_eur_m,net_cash_eur_m,roce_pct,notes
+2015,3173.5,3189,1095,,223.3,156.3,4.98,1.45,,,,,order intake derived from +7.9% growth reported for 2016; backlog derived from reported 2016/2017 growth rates (reported as ~EUR 1.09bn)
+2016,3391.3,3441.3,1145,,237.8,169.1,5.40,1.55,,,,,EBT derived from +8.9% EBT growth reported for 2017 (EBT margin 7.0%); backlog derived from +8.3% growth reported for 2017 (reported as ~EUR 1.14bn)
+2017,3691.4,3786.8,1240.1,,259.0,187.1,5.97,1.70,-150.7,,,,
+2018,3854.0,3957,1261.1,,204.3,150.6,4.78,1.70,120.7,,215.1,,order intake derived from +3.2% growth reported for 2019 (reported as ~EUR 3.96bn)
+2019,3958.9,4083.5,1385.7,,41.7,9.2,0.30,0.75,-94.4,,38.1,,EBT includes ~EUR 70m restructuring provisions and impairments
+2020,3322.7,3307.1,1210,133.2,-36.6,-79.7,-2.52,0.06,221.3,,184.9,,COVID-19 year; backlog reported as ~EUR 1.21bn; statutory minimum dividend
+2021,3634.5,4316.2,1893,312.6,177.3,141.4,4.47,1.40,203.3,,378.3,10.0,EBITDA margin 8.6% reported (8.1% excluding one-off effects); backlog derived from +83.1% growth reported for 2022
+2022,4209.3,5782.8,3466.4,373.3,242.1,187.1,5.92,1.75,371.0,398.2,669.5,14.1,
+2023,4720.7,5376.6,4122.3,457.3,310.5,224.6,7.11,2.20,-101.3,13.2,444.7,16.3,
+2024,5293.6,5460.7,4289.5,537.1,381.6,277.2,8.77,2.60,113.2,292.5,439.9,18.2,Netstal acquired (EUR 170m; FCF impact -EUR 166.7m)
+2025,5663.8,5564.7,4190.4,602.3,424.1,299.2,9.45,2.80,247.7,282.9,548.2,19.1,M&A spend EUR 35.2m
