@@ -287,7 +287,7 @@ details.advanced[open] > summary, details.edit[open] > summary { margin-bottom: 
 .log-error { color: var(--err); }
 .log-stage, .log-summary { font-weight: 700; }
 .legend-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: -4px 0 12px; }
-.year-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.year-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .year { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
 .year.missing { background: var(--warn-bg); border-color: transparent; }
 .year-head { display: flex; justify-content: space-between; align-items: center; }
