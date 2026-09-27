@@ -153,6 +153,40 @@ class ServerTests(unittest.TestCase):
         finally:
             self.app.settings.access_token = ""
 
+    def test_05_key_figures_search_overview(self):
+        lei = COMPANY["lei"]
+        data = self.json("GET", f"/api/companies/{lei}/financials")
+        self.assertEqual(data["years"], list(range(2019, 2026)))
+        self.assertEqual(data["currency"], "EUR")
+        resp, body = self.request("GET", f"/api/companies/{lei}/financials.csv?style=de")
+        self.assertEqual(resp.getheader("Content-Type"), "text/csv; charset=utf-8")
+        self.assertTrue(body.startswith("\ufeff".encode("utf-8")))
+        self.assertIn("revenue;Umsatz;EUR".encode(), body)
+        self.json("POST", f"/api/companies/{lei}/financials", {})
+
+        hits = self.json("GET", "/api/fulltext?q=Z%C3%B6lle")
+        self.assertEqual(len(hits["results"]), 2)
+        self.assertEqual(hits["results"][0]["company"], COMPANY["name"])
+        self.assertEqual(self.json("GET", "/api/fulltext?q=%22%22%20*")["results"], [])
+
+        compare = self.json("GET", f"/api/industries/28/compare?lei={lei}")
+        self.assertEqual(compare["rows"][0]["lei"], lei)
+
+        overview = self.json("GET", "/api/overview")
+        self.assertEqual(overview["stats"]["companies"], 1)
+        self.assertEqual(overview["stats"]["with_financials"], 1)
+        self.assertEqual(overview["gaps"], [])
+        self.assertEqual(overview["watchlist"][0]["latest"], 2025)
+
+        report = next(d for d in self.json("GET", f"/api/companies/{lei}")["documents"]
+                      if d["category"] == "esef_report" and d["fiscal_year"] == 2025)
+        self.json("DELETE", f"/api/documents/{report['id']}?block=1")
+        self.assertIn(report["source_url"], self.app.db.blocked_urls())
+        detail = self.json("GET", f"/api/companies/{lei}")
+        self.assertNotIn(report["id"], [d["id"] for d in detail["documents"]])
+        data = self.json("GET", f"/api/companies/{lei}/financials")
+        self.assertEqual(data["years"], list(range(2019, 2026)))  # 2025 still comes from the ESEF package
+
 
 if __name__ == "__main__":
     unittest.main()

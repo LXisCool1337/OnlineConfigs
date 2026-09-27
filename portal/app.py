@@ -18,6 +18,7 @@ JOB_TITLES = {
     "batch": "Stapelauftrag",
     "refresh": "Beobachtungsliste aktualisieren",
     "universe": "Universum aktualisieren",
+    "index": "Volltext und Kennzahlen aktualisieren",
 }
 
 
@@ -53,7 +54,7 @@ class JobRunner:
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
 
-    def start(self, workers: int | None = None) -> None:
+    def start(self, workers: int | None = None, scheduler: bool = False) -> None:
         requeued = self.app.db.requeue_interrupted()
         if requeued and self.echo:
             self.echo("info", f"{requeued} unterbrochene Aufträge wieder eingereiht", {})
@@ -61,6 +62,36 @@ class JobRunner:
             thread = threading.Thread(target=self._loop, name=f"job-worker-{i}", daemon=True)
             thread.start()
             self._threads.append(thread)
+        if scheduler:
+            thread = threading.Thread(target=self._schedule, name="scheduler", daemon=True)
+            thread.start()
+            self._threads.append(thread)
+
+    def maybe_auto_refresh(self, now: float | None = None) -> int | None:
+        """Queue a watchlist refresh when auto_refresh_days have passed since the last one."""
+        days = int(self.app.settings.auto_refresh_days or 0)
+        if days <= 0:
+            return None
+        now = now if now is not None else time.time()
+        last = float(self.app.db.get_value("state:last_auto_refresh", 0) or 0)
+        if now - last < days * 86400:
+            return None
+        self.app.db.set_value("state:last_auto_refresh", now)
+        return self.submit("refresh", {"auto": True}, title="Automatische Aktualisierung der Beobachtungsliste")
+
+    def next_auto_refresh(self) -> float | None:
+        days = int(self.app.settings.auto_refresh_days or 0)
+        if days <= 0:
+            return None
+        return float(self.app.db.get_value("state:last_auto_refresh", 0) or 0) + days * 86400
+
+    def _schedule(self) -> None:
+        while not self._stop.wait(60):
+            try:
+                self.maybe_auto_refresh()
+            except Exception as err:  # noqa: BLE001 - the scheduler must keep running
+                if self.echo:
+                    self.echo("error", f"Planer: {err}", {})
 
     def stop(self) -> None:
         self._stop.set()

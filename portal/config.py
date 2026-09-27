@@ -56,6 +56,7 @@ UI_KEYS = (
     "openalex_max",
     "curated_max_per_source",
     "default_rate",
+    "auto_refresh_days",
 )
 SECRET_KEYS = ("brave_api_key", "access_token")
 
@@ -89,6 +90,7 @@ class Settings:
     crawl_max_depth: int = 3
     job_workers: int = 2
     download_workers: int = 3
+    auto_refresh_days: int = 0  # 0 = off; otherwise the watchlist is refreshed every N days while serving
     # Optional web search to fill gaps (older PDFs, industry reports)
     search_provider: str = ""  # "", "brave" or "searxng"
     brave_api_key: str = ""

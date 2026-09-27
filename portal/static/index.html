@@ -18,8 +18,10 @@
       </div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Bereiche">
-      <button role="tab" data-tab="company" aria-selected="true">Unternehmen</button>
+      <button role="tab" data-tab="overview" aria-selected="true">Übersicht</button>
+      <button role="tab" data-tab="company">Unternehmen</button>
       <button role="tab" data-tab="industry">Branchen</button>
+      <button role="tab" data-tab="fulltext">Volltext</button>
       <button role="tab" data-tab="jobs">Aufträge <span id="jobs-badge" class="badge" hidden></span></button>
       <button role="tab" data-tab="library">Bibliothek</button>
       <button role="tab" data-tab="universe">Universum</button>
@@ -30,8 +32,33 @@
   <div id="notice" class="notice" hidden></div>
 
   <main>
+    <!-- Übersicht -->
+    <section id="tab-overview" class="tab" role="tabpanel">
+      <div id="ov-stats" class="stats wide"></div>
+      <div class="grid2 top">
+        <div class="card">
+          <h3>Zuletzt geladen</h3>
+          <ul id="ov-recent" class="plain"></ul>
+        </div>
+        <div class="card">
+          <h3>Lücken in der Bibliothek</h3>
+          <ul id="ov-gaps" class="plain"></ul>
+        </div>
+        <div class="card">
+          <h3>Laufende Aufträge</h3>
+          <ul id="ov-active" class="plain"></ul>
+        </div>
+        <div class="card">
+          <h3>Beobachtungsliste</h3>
+          <ul id="ov-watch" class="plain"></ul>
+          <p id="ov-auto" class="muted small"></p>
+        </div>
+      </div>
+      <p id="ov-hint" class="muted small"></p>
+    </section>
+
     <!-- Unternehmen -->
-    <section id="tab-company" class="tab" role="tabpanel">
+    <section id="tab-company" class="tab" role="tabpanel" hidden>
       <div class="card">
         <label for="search" class="label">Unternehmen suchen</label>
         <div class="searchrow">
@@ -106,6 +133,23 @@
           <div class="scroll-x"><table id="c-coverage" class="coverage"></table></div>
         </div>
 
+        <div id="c-fin" class="card" hidden>
+          <div class="row between">
+            <h3>Kennzahlen aus den ESEF-Berichten</h3>
+            <div class="actions">
+              <a id="c-fin-csv" class="button ghost" href="#">Excel (CSV)</a>
+              <button id="c-fin-refresh" class="ghost">Neu berechnen</button>
+            </div>
+          </div>
+          <p id="c-fin-sub" class="muted small"></p>
+          <div id="c-charts" class="charts"></div>
+          <details>
+            <summary>Tabelle aller Kennzahlen</summary>
+            <div class="scroll-x"><table id="c-fin-table" class="docs fin"></table></div>
+          </details>
+          <p id="c-fin-notes" class="muted small"></p>
+        </div>
+
         <div class="card">
           <h3>Dokumente</h3>
           <div class="scroll-x"><table id="c-docs" class="docs"></table></div>
@@ -144,11 +188,37 @@
           <button id="i-src-add" class="ghost">Quelle hinzufügen</button>
         </div>
       </div>
+      <div id="i-compare" class="card" hidden>
+        <div class="row between">
+          <h3>Wettbewerbervergleich (letztes Geschäftsjahr)</h3>
+          <label class="inline">Kennzahl <select id="i-metric"></select></label>
+        </div>
+        <div id="i-chart" class="chart-wrap"></div>
+        <div class="scroll-x"><table id="i-table" class="docs fin"></table></div>
+        <p class="muted small">Werte aus den ESEF-Berichten der Wettbewerber. Hervorgehoben: das gewählte Unternehmen. Senkrechte Linie: Median.</p>
+      </div>
       <div class="card">
         <h3>Branchendokumente</h3>
         <div class="scroll-x"><table id="i-docs" class="docs"></table></div>
         <p id="i-docs-empty" class="muted">Noch keine Dokumente für diese Branche.</p>
       </div>
+    </section>
+
+    <!-- Volltext -->
+    <section id="tab-fulltext" class="tab" role="tabpanel" hidden>
+      <div class="card">
+        <h3>In allen Berichten suchen</h3>
+        <div class="searchrow"><input id="f-q" type="search" placeholder="z. B. Zölle, &quot;Lieferkette&quot;, Zoll*" autocomplete="off"></div>
+        <div class="grid3 mt">
+          <label>Unternehmen<select id="f-lei"><option value="">alle</option></select></label>
+          <label>Geschäftsjahr ab<input id="f-from" type="number" min="1990" max="2100" placeholder="z. B. 2020"></label>
+          <label>bis<input id="f-to" type="number" min="1990" max="2100"></label>
+        </div>
+        <p class="muted small">Mehrere Wörter = alle müssen vorkommen · „Phrase“ in Anführungszeichen · Wortanfang mit * (Zoll* findet Zölle, Zollpolitik) · OR für Alternativen</p>
+        <div class="row end"><button id="f-go" class="primary">Suchen</button></div>
+      </div>
+      <p id="f-info" class="muted small"></p>
+      <div id="f-results"></div>
     </section>
 
     <!-- Aufträge -->
@@ -229,6 +299,7 @@
           <label>Jahre je Wettbewerber<input id="s-peer_years" type="number" min="1" max="10"></label>
           <label>Max. Open-Access-Studien<input id="s-openalex_max" type="number" min="0" max="100"></label>
           <label>Max. PDFs je Verbandsquelle<input id="s-curated_max_per_source" type="number" min="0" max="100"></label>
+          <label>Beobachtungsliste automatisch aktualisieren alle … Tage (0 = aus)<input id="s-auto_refresh_days" type="number" min="0" max="365"></label>
         </div>
         <div class="checks">
           <label><input id="s-all_languages" type="checkbox"> Pro Jahr alle bevorzugten Sprachen laden</label>

@@ -4,7 +4,7 @@
 
 Dieses Dokument beschreibt, wie das Portal funktioniert, warum es so gebaut ist und wie es weiterentwickelt wird. Die Implementierung liegt in [`portal/`](../portal), die Bedienung steht in [`portal/README.md`](../portal/README.md).
 
-> **Stand:** Phase 1 ist implementiert und gegen ein nachgebautes Internet getestet (36 automatische Tests). Die echten Datenquellen waren aus der Entwicklungsumgebung nicht erreichbar, weil die Netzwerk-Policy sie gesperrt hat. Die Konnektoren folgen den dokumentierten API-Formaten und prüfen jede Antwort defensiv. Der erste Lauf gegen die echten Quellen ist trotzdem ein eigener Prüfschritt (siehe [§12](#12-risiken-und-gegenmaßnahmen)).
+> **Stand:** Phase 1 und der Kern von Phase 2 (Kennzahlen, Wettbewerbervergleich, Volltextsuche, Übersicht, automatische Aktualisierung) sind implementiert und gegen ein nachgebautes Internet getestet (46 automatische Tests). Die echten Datenquellen waren aus der Entwicklungsumgebung nicht erreichbar, weil die Netzwerk-Policy sie gesperrt hat. Die Konnektoren folgen den dokumentierten API-Formaten und prüfen jede Antwort defensiv. Der erste Lauf gegen die echten Quellen ist trotzdem ein eigener Prüfschritt (siehe [§13](#13-risiken-und-gegenmaßnahmen)).
 
 ---
 
@@ -14,10 +14,10 @@ Dieses Dokument beschreibt, wie das Portal funktioniert, warum es so gebaut ist 
 |---|---|---|
 | **Alle EU-Aktien** | Jede Aktie (CFI-Code `ES…`/`EP…`) mit EU- oder EWR-ISIN, die an einem EU-Handelsplatz zugelassen ist (ESMA FIRDS), dazu alle Emittenten mit ESEF-Berichten. Suche über Name, ISIN oder LEI. | Nur Emittenten mit LEI. Das ist seit MiFID II für zugelassene Emittenten Pflicht. |
 | **Letzte 10 Geschäftsberichte** | Die 10 jüngsten abgeschlossenen Geschäftsjahre. Bei abweichendem Geschäftsjahr zählt das Endjahr, z. B. „2023/24“ als 2024. Je Jahr gibt es den gestalteten PDF-Bericht und, ab 2020, zusätzlich den amtlichen ESEF-Bericht. | Vor 2020 gibt es kein ESEF. Diese Jahre hängen vom IR-Archiv des Unternehmens ab, notfalls von der Websuche oder manuellen Links. |
-| **Branchenreports** | Branchenpaket je NACE-Code mit 5 Quellenarten: Eurostat, Open-Access-Studien, Verbände und Behörden, Wettbewerber-Berichte, optional Websuche. | **„Alle“ Branchenreports gibt es nicht frei.** Kommerzielle Studien (Statista, IBISWorld, Gartner …) stehen hinter Bezahlschranken und werden nicht umgangen. Sie lassen sich später über eigene Lizenz-APIs anbinden ([§13](#13-roadmap)). |
+| **Branchenreports** | Branchenpaket je NACE-Code mit 5 Quellenarten: Eurostat, Open-Access-Studien, Verbände und Behörden, Wettbewerber-Berichte, optional Websuche. | **„Alle“ Branchenreports gibt es nicht frei.** Kommerzielle Studien (Statista, IBISWorld, Gartner …) stehen hinter Bezahlschranken und werden nicht umgangen. Sie lassen sich später über eigene Lizenz-APIs anbinden ([§14](#14-roadmap)). |
 | **Download** | Jede Datei landet lokal in `library/`, mit SHA-256, Quelle und Abrufdatum im `manifest.json`. Ein ZIP-Export ist je Unternehmen und je Branche möglich. | Die Dateien sind für die eigene Recherche gedacht und werden nicht weiterverbreitet. |
 
-**Nicht-Ziele:** keine Kennzahlen-Extraktion in Phase 1 (geplant für Phase 2), kein Umgehen von Logins, Captchas oder Bezahlschranken, keine Anlageberatung.
+**Nicht-Ziele:** kein Umgehen von Logins, Captchas oder Bezahlschranken, keine Anlageberatung.
 
 ---
 
@@ -79,6 +79,8 @@ flowchart LR
 | HTTP-Client | `net.py` | eigene Drosselung je Host (Standard 1 s, je Quelle konfigurierbar), `Crawl-delay`, Wiederholung mit exponentiellem Backoff und `Retry-After`, robots.txt-Prüfung, Streaming-Downloads mit Größenlimit, SHA-256 und Typprüfung über Magic Bytes (`%PDF`, `PK`, XHTML) |
 | Klassifikator | `classify.py` | erkennt Dokumenttyp, Geschäftsjahr und Sprache aus Linktext, Dateiname und Umfeld, in 22 EU-Amtssprachen plus Norwegisch und Isländisch (irische und maltesische Emittenten berichten auf Englisch) |
 | Crawler | `connectors/crawler.py` | höflicher Prioritäts-Crawler: bleibt auf der Domain, folgt nur relevanten Links, liest Sitemaps, hält ein Seitenlimit ein und merkt sich den Kontext jedes Links |
+| Kennzahlen | `financials.py` | liest Inline-XBRL aus ESEF-Berichten (auch aus dem ZIP-Paket), wendet die ixt-Zahlenformate an, berechnet Kennzahlen und Vergleiche |
+| Volltext | `fulltext.py` | FTS5-Index über alle Berichte: ESEF-XHTML immer, PDFs seitengenau mit `pdftotext` |
 | Pipelines | `pipeline.py` | Ablauf je Auftragstyp, Auswahl der besten Quelle, Downloads mit Ersatzkandidaten, Abdeckungsmatrix, Manifest |
 | Job-Runner | `app.py` | Warteschlange in SQLite, Worker-Threads, Abbrechen, Wiederaufnahme nach Neustart, Live-Protokoll |
 | Katalog | `db.py` | Unternehmen (mit FTS5-Volltextsuche), Wertpapiere, Dokumente, Aufträge, Ereignisse, Einstellungen |
@@ -145,7 +147,35 @@ Die Ablage erfolgt unter `library/industries/nace-28/{statistics,studies,associa
 
 ---
 
-## 7. Massenbetrieb: alle EU-Aktien
+## 7. Auswertung: Kennzahlen, Vergleich, Volltext
+
+**Kennzahlen aus ESEF.** Jeder ESEF-Bericht enthält die Zahlen der Pflichtabschlüsse als Inline-XBRL-Fakten nach IFRS-Taxonomie, jeweils mit Vorjahreswerten. Das Portal liest nach jedem Abruf automatisch:
+
+| Grundwerte (IFRS-Konzept) | abgeleitet |
+|---|---|
+| Umsatz (`Revenue`, sonst `RevenueFromContractsWithCustomers`), Bruttoergebnis, EBIT (`ProfitLossFromOperatingActivities`), Ergebnis vor Steuern, Jahresergebnis gesamt und Aktionärsanteil, Ergebnis je Aktie, Abschreibungen, operativer Cashflow, Investitionen in Sach- und immaterielle Anlagen, gezahlte Dividenden, Bilanzsumme, Eigenkapital, Zahlungsmittel, Schulden | Umsatzwachstum, EBIT-Marge, Nettomarge, Free Cashflow (operativer Cashflow minus Investitionen) und FCF-Marge, Eigenkapitalquote, Eigenkapitalrendite (auf das durchschnittliche Eigenkapital) |
+
+Die Regeln dahinter:
+- Nur Fakten **ohne Dimension** zählen, also Konzernwerte und keine Segmentzahlen.
+- Periodenwerte müssen ein ganzes Geschäftsjahr umfassen (300–380 Tage).
+- Die Zahlenformate (`num-dot-decimal`, `num-comma-decimal`, `fixed-zero`, Skalierung, `sign="-"`) werden korrekt umgerechnet.
+- Es gilt der **ursprünglich berichtete** Wert. Weicht der Vorjahreswert im Folgebericht ab, erscheint er als Restatement-Hinweis.
+
+Sechs ESEF-Berichte ergeben so sieben Jahre Zahlenreihe. Angezeigt werden vier Diagramme (Umsatz, EBIT-Marge, Free Cashflow, Eigenkapitalquote) und eine Tabelle aller Werte. Der Export als CSV ist Excel-tauglich (Semikolon, Dezimalkomma, UTF-8 mit BOM).
+
+**Wettbewerbervergleich.** Aus den ESEF-Berichten der Wettbewerber im Branchenpaket entsteht je Unternehmen das letzte Geschäftsjahr mit Wachstum, Margen, Eigenkapitalquote und ROE, dazu der Median. Das gewählte Unternehmen ist hervorgehoben (Akzentfarbe, die anderen grau). Verhältniszahlen sind über Währungen hinweg vergleichbar; absolute Beträge tragen ihre Währung.
+
+**Volltextsuche.** Alle Berichte landen in einem SQLite-FTS5-Index (ohne Akzente, damit „Zolle“ auch „Zölle“ findet). Mehrere Wörter werden UND-verknüpft; „Phrase“, Wortanfang\* und OR sind möglich. Filtern lässt sich nach Unternehmen und Jahren. Treffer zeigen einen markierten Textausschnitt und führen bei PDFs direkt auf die Seite. ESEF-XHTML ist immer durchsuchbar; PDFs werden seitenweise indiziert, sobald `pdftotext` (poppler-utils) installiert ist. `python -m portal index` holt das nach.
+
+**Übersicht und Pflege.**
+- Die Startseite zeigt Bestand, Speicher, zuletzt geladene Dokumente, Unternehmen mit Lücken, laufende Aufträge und die Beobachtungsliste.
+- Ein Klick auf eine fehlende Jahreszelle nimmt direkt einen PDF-Link an.
+- „Falsch“ löscht ein Dokument und sperrt dessen Link. Beim nächsten Lauf kommt der Ersatzkandidat zum Zug.
+- Mit `auto_refresh_days` holt der Server die Beobachtungsliste selbstständig nach, z. B. alle 7 Tage.
+
+---
+
+## 8. Massenbetrieb: alle EU-Aktien
 
 **Universum aufbauen.** Es gibt 2 Wege, beide über die Oberfläche (Reiter *Universum*) oder `python -m portal universe`:
 
@@ -168,7 +198,7 @@ Empfehlung: Beim Massenabruf zuerst **nur ESEF-Berichte (XHTML)** laden und die 
 
 ---
 
-## 8. Datenmodell und Ablage
+## 9. Datenmodell und Ablage
 
 | Tabelle | Inhalt |
 |---|---|
@@ -176,7 +206,10 @@ Empfehlung: Beim Massenabruf zuerst **nur ESEF-Berichte (XHTML)** laden und die 
 | `securities` | ISIN, LEI, CFI, Währung, Handelsplatz, „vom Emittenten beantragt“, Erst-/Endhandelstag (aus FIRDS) |
 | `documents` | Bereich (Unternehmen/Branche), LEI/NACE, Kategorie, Geschäftsjahr und Label, Sprache, Quelle, Quell-URL, Pfad, SHA-256, Größe, Typ, Score, Metadaten; eindeutig je (Bereich, URL, LEI, NACE) |
 | `jobs`, `job_events` | Aufträge mit Status, Fortschritt, Ergebnis sowie lückenloses Protokoll (auch für die Live-Anzeige) |
-| `industry_sources`, `settings` | eigene Branchenquellen, in der Oberfläche geänderte Einstellungen |
+| `financials` | Kennzahl je Unternehmen, Geschäftsjahr und Metrik, mit IFRS-Konzept, Quelldokument und ggf. Restatement |
+| `doc_text`, `doc_index` | FTS5-Volltextindex (Textblöcke mit Seitenzahl) und Indizierungsstatus je Dokument |
+| `blocked_urls` | als falsch markierte Links, die künftig übersprungen werden |
+| `industry_sources`, `settings` | eigene Branchenquellen, in der Oberfläche geänderte Einstellungen, Planer-Zustand |
 
 ```
 library/
@@ -192,7 +225,7 @@ library/
 
 ---
 
-## 9. Fair Use, Recht und Sicherheit
+## 10. Fair Use, Recht und Sicherheit
 
 - **robots.txt wird immer beachtet**, auch `Crawl-delay`. Bei Serverfehlern auf robots.txt wird nicht gecrawlt. Offizielle API-Downloads (ESEF, Eurostat) sind davon ausgenommen, weil sie für den maschinellen Abruf gedacht sind.
 - **Drosselung je Host** (Standard 1 Anfrage/s; GLEIF 1/s, Wikidata 1/2 s, OpenAlex 5/s), Backoff bei 429/503 und `Retry-After`. Eine Proxy-Ablehnung wird nicht wiederholt.
@@ -203,10 +236,10 @@ library/
 
 ---
 
-## 10. Qualitätssicherung
+## 11. Qualitätssicherung
 
 - **Nachgebautes Internet** ([`tests/fakeweb.py`](../tests/fakeweb.py)): GLEIF, filings.xbrl.org, Wikidata, Eurostat, OpenAlex, ESMA FIRDS, Brave, ein Branchenverband und eine Unternehmenswebsite. Die Website hat 10 Berichtsjahre in DE/EN, ein Archiv mit Links ohne aussagekräftigen Text, ein PDF nur in der Sitemap, ein PDF auf einem CDN, einen defekten Link, robots-gesperrte Bereiche und Störer (Halbjahres-, Nachhaltigkeits-, Vergütungsbericht, Präsentation, Kurzfassung, HV-Einladung).
-- **36 Tests** (`python3 -m unittest discover -s tests -t .`):
+- **46 Tests** (`python3 -m unittest discover -s tests -t .`):
   - 10/10 Jahre in der richtigen Sprache, die Kurzfassung verliert, der Ersatz springt bei einem defekten Link ein
   - robots.txt wird nie verletzt
   - Hashes und Manifest stimmen, ein zweiter Lauf lädt nichts doppelt
@@ -216,12 +249,14 @@ library/
   - Universum aus ESEF und FIRDS, Stapel
   - HTTP-API, Live-Stream, ZIP-Export sowie Sicherheitsprüfungen (Host, Herkunft, JSON-Pflicht, Traversal, Token, maskierte Schlüssel)
   - Klassifikation mit Beispielen in 10 Sprachen
-- **Oberfläche** mit Headless-Chromium durchgespielt: Suche, Abruf, Live-Protokoll, Abdeckung, Branchen, Dunkelmodus, Handy-Breite ohne horizontales Scrollen, keine Konsolenfehler.
+  - Kennzahlen aus Inline-XBRL: deutsches und englisches Zahlenformat, Vorzeichen, Nullstrich, Vorjahreswerte, Restatement, Segmentwerte ausgeschlossen, Ersatz durch das ZIP-Paket
+  - Volltextsuche inkl. PDF-Seiten mit einem nachgebildeten `pdftotext`, Wettbewerbervergleich, Ersatz eines als falsch markierten Dokuments, automatische Aktualisierung
+- **Oberfläche** mit Headless-Chromium durchgespielt: Suche, Abruf, Live-Protokoll, Abdeckung, Kennzahlen-Diagramme mit Tooltip, Vergleich, Volltext, Übersicht, Dunkelmodus, Handy-Breite ohne horizontales Scrollen, keine Konsolenfehler.
 - **Kennzahlen im Betrieb:** Abdeckungsquote (Jahre mit Bericht ÷ Zieljahre) je Unternehmen und Land, Anteil Ersatzkandidaten, Fehlerquote je Quelle, robots-Blockaden. Das alles lässt sich aus `documents` und `job_events` ablesen.
 
 ---
 
-## 11. Betrieb
+## 12. Betrieb
 
 ```bash
 python3 -m portal serve --open            # Oberfläche auf http://localhost:8765
@@ -229,13 +264,16 @@ python3 -m portal fetch DE0006335003 --industry --nace 28   # z. B. Krones, per 
 python3 -m portal universe --source esef  # Katalog aller ESEF-Emittenten
 python3 -m portal batch --country DE,AT --esef-only --limit 50
 python3 -m portal refresh                 # Beobachtungsliste (für cron)
+python3 -m portal figures DE0006335003    # Kennzahlen als Tabelle (--csv de für Excel)
+python3 -m portal grep "Zoll*" --limit 10 # Volltextsuche
+python3 -m portal index                   # Volltext nachindizieren, Kennzahlen neu berechnen
 ```
 
 Die Konfiguration steht in `portal.toml` (Vorlage: [`portal.example.toml`](../portal.example.toml)) oder in Umgebungsvariablen `PORTAL_<NAME>`. Einige Werte lassen sich direkt in der Oberfläche ändern. Für einen Server-Betrieb: `host = "0.0.0.0"`, `access_token` setzen und das Portal hinter einen Reverse-Proxy mit TLS stellen.
 
 ---
 
-## 12. Risiken und Gegenmaßnahmen
+## 13. Risiken und Gegenmaßnahmen
 
 | Risiko | Auswirkung | Gegenmaßnahme |
 |---|---|---|
@@ -249,19 +287,20 @@ Die Konfiguration steht in `portal.toml` (Vorlage: [`portal.example.toml`](../po
 
 ---
 
-## 13. Roadmap
+## 14. Roadmap
 
 | Phase | Inhalt | Status |
 |---|---|---|
 | **1 – Fundament** | alles in diesem Dokument: Universum, 10-Jahres-Abruf aus ESEF + IR-Website + Websuche + manuell, Branchenpaket, Oberfläche, CLI, Stapel, Tests | **umgesetzt** |
 | 1b – Abnahme live | Lauf gegen die echten Quellen mit Stichprobe aus DE, FR, IT, ES, NL, SE, PL; Feinjustierung der Signalwörter und Datensatz-Codes | nächster Schritt |
-| 2 – Auswertung | Kennzahlen aus ESEF xBRL-JSON (Umsatz, EBIT, Jahresüberschuss, Cashflow, Eigenkapital, Aktien) als CSV je Unternehmen und Branche; NACE-Vorschlag aus ESEF-Tätigkeitsbeschreibung; optional Headless-Browser für JavaScript-Seiten | geplant |
+| 2 – Auswertung | Kennzahlen aus Inline-XBRL mit Diagrammen und CSV, Wettbewerbervergleich, Volltextsuche, Übersicht, automatische Aktualisierung, Lücken schließen und falsche Dokumente ersetzen | **umgesetzt** |
+| 2b – Auswertung | NACE-Vorschlag aus ESEF-Tätigkeitsbeschreibung; Headless-Browser für JavaScript-Seiten; Kennzahlen vor 2019 aus PDF-Tabellen | geplant |
 | 3 – Quellen | OAM-Konnektoren, wo zulässig; ESAP, sobald verfügbar; Lizenz-Konnektoren (z. B. Statista-API) mit eigenem Schlüssel; Benachrichtigung bei neuen Berichten | geplant |
 | 4 – Team | Mehrbenutzer, gemeinsame Bibliothek auf Server/NAS, Volltextsuche über alle Berichte | optional |
 
 ---
 
-## 14. Offene Entscheidungen
+## 15. Offene Entscheidungen
 
 1. **Sprachpräferenz** als Standard: Englisch zuerst (heute) oder Landessprache zuerst?
 2. **Websuche**: Brave-API-Schlüssel (kostenloser Plan mit Monatslimit) oder eigenes SearXNG?

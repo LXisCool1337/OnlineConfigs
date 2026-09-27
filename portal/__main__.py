@@ -9,6 +9,7 @@ import webbrowser
 
 from .app import App
 from .config import load_settings
+from . import financials, fulltext
 from .pipeline import CATEGORY_LABELS
 from .resolver import Resolver
 
@@ -80,6 +81,17 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("export", help="Unternehmensordner als ZIP exportieren")
     p.add_argument("lei")
 
+    p = sub.add_parser("figures", help="Kennzahlen aus den ESEF-Berichten anzeigen (neu berechnen)")
+    p.add_argument("query", help="Name, ISIN oder LEI")
+    p.add_argument("--csv", choices=["de", "en"], help="als CSV ausgeben")
+
+    sub.add_parser("index", help="Volltext indizieren und Kennzahlen neu berechnen")
+
+    p = sub.add_parser("grep", help="Volltextsuche in allen Berichten")
+    p.add_argument("query", help='Suchbegriffe, "Phrase", Wortanfang*')
+    p.add_argument("--lei")
+    p.add_argument("--limit", type=int, default=20)
+
     args = parser.parse_args(argv)
     settings = load_settings(args.config)
     app = App(settings, echo=echo)
@@ -87,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         from .server import serve
         server = serve(app, args.host, args.port)
-        app.jobs.start()
+        app.jobs.start(scheduler=True)
         host, port = server.server_address[:2]
         url = f"http://{'localhost' if host in ('127.0.0.1', '::1') else host}:{port}/"
         print(f"EU-Report-Portal läuft auf {url}  (Bibliothek: {settings.library_dir})", flush=True)
@@ -120,6 +132,44 @@ def main(argv: list[str] | None = None) -> int:
         print(path)
         return 0
 
+    if args.command == "figures":
+        company = Resolver(app.context(echo=echo)).resolve(query=args.query)
+        financials.extract(app.context(echo=echo), company["lei"])
+        if args.csv:
+            sys.stdout.write(financials.csv_for(app.db, company["lei"], args.csv))
+            return 0
+        data = financials.table_for(app.db, company["lei"])
+        if not data["years"]:
+            print("Keine ESEF-Berichte in der Bibliothek. Zuerst: python -m portal fetch", args.query)
+            return 1
+        print(f"{company['name']} · {data['currency']} · Beträge in Mio.")
+        print(f"{'':28}" + "".join(f"{y:>11}" for y in data["years"]))
+        for m in data["metrics"]:
+            cells = []
+            for y in data["years"]:
+                v = m["values"].get(str(y))
+                if v is None:
+                    cells.append(f"{'–':>11}")
+                elif m["unit"] == "pct":
+                    cells.append(f"{v * 100:>10.1f}%")
+                elif m["unit"] == "per_share":
+                    cells.append(f"{v:>11.2f}")
+                else:
+                    cells.append(f"{v / 1e6:>11,.1f}")
+            print(f"{m['label'][:27]:28}" + "".join(cells))
+        return 0
+
+    if args.command == "grep":
+        hits = fulltext.search(app.db, args.query, lei=args.lei, limit=args.limit)
+        for hit in hits:
+            company = (app.db.company(hit["lei"]) or {}).get("name") or hit["nace"] or ""
+            where = f"S. {hit['page']}" if hit["page"] else ""
+            snippet = hit["snippet"].replace(fulltext.MARK_START, "»").replace(fulltext.MARK_END, "«")
+            print(f"{company} · {hit['fy_label'] or hit['fiscal_year'] or ''} · {hit['title']} {where}\n    {snippet}\n")
+        if not hits:
+            print("Keine Treffer.")
+        return 0
+
     if args.command == "fetch":
         params = {"query": args.query, "include": _include(args), "urls": args.url, "all_languages": args.all_languages}
         for key in ("years", "ir_url", "website", "nace", "keywords", "peers"):
@@ -133,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
         job = app.jobs.run_sync("industry", params)
     elif args.command == "universe":
         job = app.jobs.run_sync("universe", {"source": args.source})
+    elif args.command == "index":
+        job = app.jobs.run_sync("index", {})
     elif args.command in ("batch", "refresh"):
         params = {"countries": args.country or "", "esef_only": args.esef_only, "limit": args.limit,
                   "include": {"industry": args.industry}} if args.command == "batch" else {}

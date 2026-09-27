@@ -50,6 +50,78 @@ def xhtml_bytes(title: str) -> bytes:
             '<body><p>' + title + '</p></body></html>').encode()
 
 
+def figures(lei: str, year: int) -> dict[str, float]:
+    """Deterministic key figures in EUR million (the company has a loss year in 2020)."""
+    base = {"529900": 3000.0, "815600": 900.0, "969500": 1500.0}.get(lei[:6], 1000.0)
+    t = year - 2016
+    revenue = base + base * 0.08 * t
+    ebit = revenue * (0.03 if year == 2020 else 0.06 + 0.004 * t)
+    net = -79.7 if (lei[:6] == "529900" and year == 2020) else ebit * 0.7
+    return {"ifrs-full:Revenue": revenue, "ifrs-full:ProfitLossFromOperatingActivities": ebit,
+            "ifrs-full:ProfitLoss": net, "ifrs-full:ProfitLossAttributableToOwnersOfParent": net * 0.98,
+            "ifrs-full:CashFlowsFromUsedInOperatingActivities": ebit * 1.2,
+            "ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities": revenue * 0.03,
+            "ifrs-full:Assets": revenue * 1.1, "ifrs-full:Equity": revenue * 0.45,
+            "ifrs-full:CashAndCashEquivalents": revenue * 0.1, "eps": net / 31.6}
+
+
+def fmt_number(value: float, comma: bool, decimals: int = 1) -> str:
+    text = f"{abs(value):,.{decimals}f}"
+    return text.replace(",", "X").replace(".", ",").replace("X", ".") if comma else text
+
+
+def ixbrl_bytes(lei: str, year: int, idx: int = 0) -> bytes:
+    """An ESEF-like inline XBRL report: current and prior year, one dimensional fact, prose for search."""
+    comma = lei[:6] == "529900"  # the German company formats numbers the German way
+    fmt = "ixt4:num-comma-decimal" if comma else "ixt4:num-dot-decimal"
+    contexts = []
+    for cid, y in (("cur", year), ("prev", year - 1)):
+        contexts.append(f'<xbrli:context id="d_{cid}"><xbrli:entity><xbrli:identifier scheme="http://standards.iso.org/iso/17442">{lei}</xbrli:identifier></xbrli:entity>'
+                        f'<xbrli:period><xbrli:startDate>{y}-01-01</xbrli:startDate><xbrli:endDate>{y}-12-31</xbrli:endDate></xbrli:period></xbrli:context>')
+        contexts.append(f'<xbrli:context id="i_{cid}"><xbrli:entity><xbrli:identifier scheme="http://standards.iso.org/iso/17442">{lei}</xbrli:identifier></xbrli:entity>'
+                        f'<xbrli:period><xbrli:instant>{y}-12-31</xbrli:instant></xbrli:period></xbrli:context>')
+    contexts.append(f'<xbrli:context id="d_seg"><xbrli:entity><xbrli:identifier scheme="http://standards.iso.org/iso/17442">{lei}</xbrli:identifier>'
+                    '<xbrli:segment><xbrldi:explicitMember dimension="ifrs-full:SegmentsAxis">x:Service</xbrldi:explicitMember></xbrli:segment></xbrli:entity>'
+                    f'<xbrli:period><xbrli:startDate>{year}-01-01</xbrli:startDate><xbrli:endDate>{year}-12-31</xbrli:endDate></xbrli:period></xbrli:context>')
+    units = ('<xbrli:unit id="EUR"><xbrli:measure>iso4217:EUR</xbrli:measure></xbrli:unit>'
+             '<xbrli:unit id="EURps"><xbrli:divide><xbrli:unitNumerator><xbrli:measure>iso4217:EUR</xbrli:measure>'
+             '</xbrli:unitNumerator><xbrli:unitDenominator><xbrli:measure>xbrli:shares</xbrli:measure>'
+             '</xbrli:unitDenominator></xbrli:divide></xbrli:unit>')
+    rows = []
+    for concept in ("ifrs-full:Revenue", "ifrs-full:ProfitLossFromOperatingActivities", "ifrs-full:ProfitLoss",
+                    "ifrs-full:ProfitLossAttributableToOwnersOfParent", "ifrs-full:CashFlowsFromUsedInOperatingActivities",
+                    "ifrs-full:PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities", "ifrs-full:Assets",
+                    "ifrs-full:Equity", "ifrs-full:CashAndCashEquivalents"):
+        cells = []
+        for cid, y in (("cur", year), ("prev", year - 1)):
+            value = figures(lei, y)[concept]
+            if concept == "ifrs-full:Revenue" and cid == "prev" and year == 2021 and comma:
+                value += 10.0  # restated comparative in the FY2021 report
+            kind = "i" if concept in ("ifrs-full:Assets", "ifrs-full:Equity", "ifrs-full:CashAndCashEquivalents") else "d"
+            sign = ' sign="-"' if value < 0 else ""
+            cells.append(f'<td><ix:nonFraction name="{concept}" contextRef="{kind}_{cid}" unitRef="EUR" decimals="-5" '
+                         f'scale="6" format="{fmt}"{sign}>{fmt_number(value, comma)}</ix:nonFraction></td>')
+        rows.append(f"<tr><td>{concept}</td>{''.join(cells)}</tr>")
+    eps = figures(lei, year)["eps"]
+    eps_sign = ' sign="-"' if eps < 0 else ""
+    rows.append(f'<tr><td>EPS</td><td><ix:nonFraction name="ifrs-full:BasicEarningsLossPerShare" contextRef="d_cur" '
+                f'unitRef="EURps" decimals="2" format="{fmt}"{eps_sign}>{fmt_number(eps, comma, 2)}'
+                '</ix:nonFraction></td></tr>')
+    rows.append('<tr><td>Segment</td><td><ix:nonFraction name="ifrs-full:Revenue" contextRef="d_seg" unitRef="EUR" '
+                f'decimals="-5" scale="6" format="{fmt}">{fmt_number(1.0, comma)}</ix:nonFraction></td></tr>')
+    prose = f"<p>Geschäftsjahr {year}: Die Lieferkette blieb stabil. Der Auftragseingang stieg deutlich.</p>"
+    if year >= 2024:
+        prose += "<p>Zölle in den USA belasteten das Geschäft; die Zollpolitik bleibt ein Risiko.</p>"
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml" '
+            'xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:xbrli="http://www.xbrl.org/2003/instance" '
+            'xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:ifrs-full="https://xbrl.ifrs.org/taxonomy/2022-03-24/ifrs-full" '
+            'xmlns:ixt4="http://www.xbrl.org/inlineXBRL/transformation/2020-02-12" '
+            'xmlns:iso4217="http://www.xbrl.org/2003/iso4217">'
+            f'<head><title>ESEF {lei} {year} #{idx}</title></head><body>'
+            f'<div style="display:none"><ix:header><ix:resources>{"".join(contexts)}{units}</ix:resources></ix:header></div>'
+            f'<h1>Jahresfinanzbericht {year}</h1>{prose}<table>{"".join(rows)}</table></body></html>').encode("utf-8")
+
+
 def zip_bytes(files: dict[str, bytes]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
@@ -365,10 +437,10 @@ class FakeWeb:
         if path.startswith("/esef/files/"):
             _, _, _, lei, period, idx, name = path.split("/")
             if name == "report.xhtml":
-                return 200, "application/xhtml+xml", xhtml_bytes(f"ESEF {lei} {period} #{idx}")
+                return 200, "application/xhtml+xml", ixbrl_bytes(lei, int(period[:4]), int(idx))
             if name == "package.zip":
                 return 200, "application/zip", zip_bytes({f"{lei}-{period}/reports/report.xhtml":
-                                                          xhtml_bytes(f"ESEF {lei} {period} #{idx}")})
+                                                          ixbrl_bytes(lei, int(period[:4]), int(idx))})
             if name == "report.json":
                 return j({"documentInfo": {"documentType": "https://xbrl.org/2021/xbrl-json"}, "facts": {}})
 

@@ -16,7 +16,16 @@ Das öffnet http://localhost:8765. Beim ersten Start unter **Einstellungen** ein
 2. Optional die IR-Seite bzw. das Berichtsarchiv und die Branche (NACE) eintragen.
 3. **Berichte laden**. Das Live-Protokoll zeigt jeden Schritt; danach folgen die Abdeckungsmatrix (Jahr × PDF/ESEF), die Dokumentliste und der ZIP-Export.
 
-Weitere Reiter: **Branchen** (Branchenpaket, eigene Quellen), **Aufträge**, **Bibliothek** (inkl. Beobachtungsliste), **Universum** (Katalog aller EU-Aktien und Stapelabruf), **Einstellungen**.
+Die Reiter:
+
+| Reiter | Inhalt |
+|---|---|
+| **Übersicht** | Bestand, Speicher, zuletzt geladene Dokumente, Unternehmen mit Lücken, laufende Aufträge, Beobachtungsliste |
+| **Unternehmen** | Abruf, Abdeckung (fehlende Jahre per Klick ergänzen), **Kennzahlen aus den ESEF-Berichten** mit Diagrammen und Excel-Export, Dokumentliste („Falsch“ ersetzt ein Dokument beim nächsten Lauf durch die nächstbeste Quelle) |
+| **Branchen** | Branchenpaket, eigene Quellen, **Wettbewerbervergleich** (Margen, Wachstum, Eigenkapitalquote, ROE, Median) |
+| **Volltext** | Suche in allen Berichten: Wörter, „Phrasen“, Wortanfang* (Zoll* findet Zölle, Zollpolitik), Filter nach Unternehmen und Jahren |
+| **Aufträge**, **Bibliothek**, **Universum** | Auftragsprotokolle, Bestand, Katalog aller EU-Aktien und Stapelabruf |
+| **Einstellungen** | Kontakt-E-Mail, Sprachen, Websuche und automatische Aktualisierung der Beobachtungsliste (alle N Tage) |
 
 ## Kommandozeile
 
@@ -30,7 +39,16 @@ python3 -m portal universe --source firds      # vollständig: ESMA-Referenzdate
 python3 -m portal batch --country DE,AT --esef-only --limit 50
 python3 -m portal refresh                      # Beobachtungsliste aktualisieren (cron)
 python3 -m portal export <LEI>
+python3 -m portal figures DE0006335003         # Kennzahlen-Tabelle (--csv de: Excel-CSV)
+python3 -m portal grep "Zoll*" --limit 10      # Volltextsuche über alle Berichte
+python3 -m portal index                        # Volltext nachindizieren, Kennzahlen neu berechnen
 ```
+
+## Kennzahlen und Volltext
+
+Die Kennzahlen stammen direkt aus dem Inline-XBRL der ESEF-Berichte: Umsatz, EBIT, Jahresergebnis, Ergebnis je Aktie, Cashflow, Investitionen, Bilanz und daraus Margen, Free Cashflow, Eigenkapitalquote und ROE. Jeder Bericht enthält auch das Vorjahr, daher ergeben sechs Berichte sieben Jahre. Angezeigt werden die ursprünglich berichteten Werte; spätere Anpassungen erscheinen als Hinweis.
+
+Die Volltextsuche deckt die ESEF-Berichte immer ab. PDFs werden durchsuchbar, sobald `pdftotext` installiert ist (Linux: `apt install poppler-utils`, macOS: `brew install poppler`, Windows: Poppler-Binaries in den PATH). Danach einmal `python3 -m portal index` ausführen.
 
 ## Wo die Dateien landen
 

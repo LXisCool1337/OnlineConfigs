@@ -10,11 +10,13 @@ import json
 import mimetypes
 import re
 import time
+from datetime import datetime, timezone
 import traceback
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlsplit
 
+from . import financials, fulltext
 from .config import PACKAGE_DIR
 from .identifiers import COUNTRY_NAMES, EU_EEA, nace_divisions, nace_label, normalize_nace
 from .pipeline import CATEGORY_LABELS, compute_coverage, final_window
@@ -181,7 +183,95 @@ def make_handler(app):
         if doc.get("path"):
             app.library.absolute(doc["path"]).unlink(missing_ok=True)
         app.db.delete_document(doc["id"])
-        return {"ok": True}
+        blocked = (h.query.get("block") or ["0"])[0] == "1"
+        if blocked:
+            app.db.block_url(doc["source_url"], doc.get("lei"), "als falsch markiert")
+        if doc.get("lei") and doc["category"] in ("esef_report", "peer_report", "esef_package", "peer_report_package"):
+            financials.extract(app.context(), doc["lei"])
+        return {"ok": True, "blocked": blocked}
+
+    # --- key figures, comparison, full text, overview --------------------------------
+
+    @route("GET", r"/api/companies/(?P<lei>[A-Z0-9]{20})/financials")
+    def company_financials(h, m):
+        return financials.table_for(app.db, m["lei"])
+
+    @route("POST", r"/api/companies/(?P<lei>[A-Z0-9]{20})/financials")
+    def company_financials_refresh(h, m):
+        financials.extract(app.context(), m["lei"])
+        return financials.table_for(app.db, m["lei"])
+
+    @route("GET", r"/api/companies/(?P<lei>[A-Z0-9]{20})/financials\.csv")
+    def company_financials_csv(h, m):
+        style = (h.query.get("style") or ["de"])[0]
+        record = app.db.company(m["lei"]) or {"name": m["lei"]}
+        h.send_text(financials.csv_for(app.db, m["lei"], "en" if style == "en" else "de"),
+                    f"kennzahlen_{record['name']}_{m['lei']}.csv", bom=style != "en")
+
+    @route("GET", r"/api/industries/(?P<nace>[0-9.]{2,5})/compare")
+    def industry_compare(h, m):
+        nace = normalize_nace(m["nace"])
+        if not nace:
+            raise ApiError(400, "Ungültiger NACE-Code")
+        focus = (h.query.get("lei") or [None])[0]
+        return financials.comparison(app.db, nace, focus if focus and re.fullmatch(r"[A-Z0-9]{20}", focus) else None)
+
+    @route("GET", r"/api/fulltext")
+    def fulltext_search(h, m):
+        q = (h.query.get("q") or [""])[0].strip()
+        if len(q) < 2:
+            return {"results": [], "pdftotext": fulltext.pdftotext_available()}
+        get = lambda k: (h.query.get(k) or [None])[0]  # noqa: E731
+        try:
+            hits = fulltext.search(app.db, q, lei=get("lei"), nace=normalize_nace(get("nace")) if get("nace") else None,
+                                   year_from=get("from"), year_to=get("to"))
+        except Exception as err:  # noqa: BLE001 - malformed query reaching FTS5
+            raise ApiError(400, f"Suchanfrage nicht verstanden: {err}") from None
+        names = {}
+        for hit in hits:
+            if hit["lei"] and hit["lei"] not in names:
+                names[hit["lei"]] = (app.db.company(hit["lei"]) or {}).get("name")
+            hit["company"] = names.get(hit["lei"])
+            hit["category_label"] = CATEGORY_LABELS.get(hit["category"], hit["category"])
+        stats = app.db.one("SELECT COUNT(*) AS docs FROM doc_index WHERE status = 'ok'")
+        return {"results": hits, "indexed": stats["docs"], "pdftotext": fulltext.pdftotext_available()}
+
+    @route("GET", r"/api/overview")
+    def overview(h, m):
+        db = app.db
+        stats = db.one("SELECT COUNT(*) AS documents, IFNULL(SUM(size), 0) AS bytes, "
+                       "COUNT(DISTINCT CASE WHEN scope = 'company' THEN lei END) AS companies, "
+                       "COUNT(DISTINCT CASE WHEN scope = 'industry' THEN nace END) AS industries FROM documents")
+        stats["indexed"] = db.one("SELECT COUNT(*) AS n FROM doc_index WHERE status = 'ok'")["n"]
+        stats["with_financials"] = db.one("SELECT COUNT(DISTINCT lei) AS n FROM financials")["n"]
+        recent = db.query("SELECT d.id, d.lei, d.nace, d.category, d.fiscal_year, d.fy_label, d.title, d.size, "
+                          "d.created_at, c.name AS company FROM documents d LEFT JOIN companies c ON c.lei = d.lei "
+                          "ORDER BY d.id DESC LIMIT 8")
+        for r in recent:
+            r["category_label"] = CATEGORY_LABELS.get(r["category"], r["category"])
+        gaps = []
+        today = date.today()
+        for c in db.library_companies():
+            docs = db.company_documents(c["lei"])
+            found = {d["fiscal_year"] for d in docs if d["fiscal_year"]}
+            cov = compute_coverage(docs, final_window(found, app.settings.years, today))
+            if cov["missing"]:
+                gaps.append({"lei": c["lei"], "name": c["name"], "covered": cov["covered"], "target": cov["target"],
+                             "missing": cov["missing"]})
+        gaps.sort(key=lambda g: g["covered"])
+        watch = []
+        for c in db.query("SELECT * FROM companies WHERE watch = 1 ORDER BY name"):
+            latest = db.one("SELECT MAX(fiscal_year) AS y FROM documents WHERE lei = ? AND scope = 'company'",
+                            (c["lei"],))
+            watch.append({"lei": c["lei"], "name": c["name"], "latest": latest["y"] if latest else None})
+        nxt = app.jobs.next_auto_refresh()
+        return {"stats": stats, "recent": recent, "gaps": gaps[:12],
+                "active": db.query("SELECT id, kind, title, status, progress, stage FROM jobs "
+                                   "WHERE status IN ('queued', 'running', 'cancelling') ORDER BY id LIMIT 8"),
+                "watchlist": watch,
+                "auto_refresh": {"days": app.settings.auto_refresh_days,
+                                 "next": datetime.fromtimestamp(nxt, timezone.utc).isoformat() if nxt else None},
+                "pdftotext": fulltext.pdftotext_available()}
 
     @route("GET", r"/api/jobs")
     def jobs(h, m):
@@ -192,7 +282,7 @@ def make_handler(app):
         body = h.json_body()
         kind = body.get("kind")
         params = body.get("params") or {}
-        if kind not in ("company", "industry", "batch", "refresh", "universe"):
+        if kind not in ("company", "industry", "batch", "refresh", "universe", "index"):
             raise ApiError(400, "Unbekannter Auftragstyp")
         if kind == "company" and not (params.get("lei") or params.get("query")):
             raise ApiError(400, "Bitte ein Unternehmen wählen")
@@ -356,6 +446,16 @@ def make_handler(app):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-cache")
             self._headers({"Content-Security-Policy": UI_CSP})
+            self.end_headers()
+            self.wfile.write(body)
+
+        def send_text(self, text: str, filename: str, *, bom: bool = False) -> None:
+            body = ("\ufeff" if bom else "").encode("utf-8") + text.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
+            self._headers()
             self.end_headers()
             self.wfile.write(body)
 

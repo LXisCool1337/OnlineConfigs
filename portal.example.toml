@@ -30,6 +30,9 @@ search_provider = ""
 brave_api_key = ""
 searxng_url = ""
 
+# Refresh the watchlist automatically every N days while the server runs (0 = off).
+auto_refresh_days = 0
+
 # Industry package.
 peers_max = 12
 peer_years = 1

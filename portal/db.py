@@ -110,6 +110,33 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE VIRTUAL TABLE IF NOT EXISTS company_fts USING fts5(
     lei UNINDEXED, name, isins, tokenize = 'unicode61 remove_diacritics 2'
 );
+CREATE TABLE IF NOT EXISTS financials (
+    lei TEXT NOT NULL,
+    fiscal_year INTEGER NOT NULL,
+    metric TEXT NOT NULL,
+    value REAL,
+    unit TEXT,
+    period_end TEXT,
+    concept TEXT,
+    doc_id INTEGER,
+    restated REAL,
+    PRIMARY KEY (lei, fiscal_year, metric)
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS doc_text USING fts5(
+    content, doc_id UNINDEXED, page UNINDEXED, tokenize = 'unicode61 remove_diacritics 2'
+);
+CREATE TABLE IF NOT EXISTS doc_index (
+    doc_id INTEGER PRIMARY KEY,
+    chunks INTEGER,
+    status TEXT,
+    indexed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS blocked_urls (
+    url TEXT PRIMARY KEY,
+    lei TEXT,
+    reason TEXT,
+    created_at TEXT
+);
 """
 
 JSON_COLUMNS = {"isins", "industries", "meta", "params", "summary", "data"}
@@ -292,7 +319,60 @@ class Database:
                           "ORDER BY category, fiscal_year DESC, title", (nace,))
 
     def delete_document(self, doc_id: int) -> None:
-        self.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        with self.transaction():
+            self._conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            self._conn.execute("DELETE FROM doc_text WHERE doc_id = ?", (doc_id,))
+            self._conn.execute("DELETE FROM doc_index WHERE doc_id = ?", (doc_id,))
+
+    def block_url(self, url: str, lei: str | None, reason: str = "") -> None:
+        self.execute("INSERT OR REPLACE INTO blocked_urls (url, lei, reason, created_at) VALUES (?, ?, ?, ?)",
+                     (url, lei, reason, now_iso()))
+
+    def blocked_urls(self) -> set[str]:
+        return {r["url"] for r in self.query("SELECT url FROM blocked_urls")}
+
+    # --- key figures and full text -----------------------------------------------------
+
+    def replace_financials(self, lei: str, rows: list[tuple]) -> None:
+        with self.transaction():
+            self._conn.execute("DELETE FROM financials WHERE lei = ?", (lei,))
+            self._conn.executemany(
+                "INSERT INTO financials (lei, fiscal_year, metric, value, unit, period_end, concept, doc_id, restated) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+
+    def store_text(self, doc_id: int, chunks: list[tuple[int | None, str]], status: str) -> None:
+        with self.transaction():
+            self._conn.execute("DELETE FROM doc_text WHERE doc_id = ?", (doc_id,))
+            self._conn.executemany("INSERT INTO doc_text (content, doc_id, page) VALUES (?, ?, ?)",
+                                   [(text, doc_id, page) for page, text in chunks])
+            self._conn.execute("INSERT OR REPLACE INTO doc_index (doc_id, chunks, status, indexed_at) "
+                               "VALUES (?, ?, ?, ?)", (doc_id, len(chunks), status, now_iso()))
+
+    def unindexed_documents(self, lei: str | None = None, nace: str | None = None) -> list[dict]:
+        sql = ("SELECT d.* FROM documents d LEFT JOIN doc_index i ON i.doc_id = d.id "
+               "WHERE (i.doc_id IS NULL OR i.status = 'no_extractor') AND d.path IS NOT NULL "
+               "AND d.mime IN ('pdf', 'xhtml', 'html')")
+        params: list = []
+        if lei:
+            sql += " AND d.lei = ?"
+            params.append(lei)
+        if nace:
+            sql += " AND d.nace = ?"
+            params.append(nace)
+        return self.query(sql + " ORDER BY d.id", params)
+
+    def get_value(self, key: str, default=None):
+        row = self.one("SELECT value FROM settings WHERE key = ?", (key,))
+        if not row:
+            return default
+        try:
+            return json.loads(row["value"])
+        except ValueError:
+            return row["value"]
+
+    def set_value(self, key: str, value) -> None:
+        self.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                     (key, json.dumps(value, ensure_ascii=False)))
 
     # --- jobs --------------------------------------------------------------------------
 
@@ -355,7 +435,7 @@ class Database:
 
     def load_settings(self) -> dict:
         out = {}
-        for row in self.query("SELECT key, value FROM settings"):
+        for row in self.query("SELECT key, value FROM settings WHERE key NOT LIKE 'state:%'"):
             try:
                 out[row["key"]] = json.loads(row["value"])
             except ValueError:

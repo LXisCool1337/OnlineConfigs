@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
 
+from . import financials, fulltext
 from .classify import LinkInfo, classify_report_link
 from .connectors.base import API_SOURCES, Candidate
 from .connectors.curated import Curated
@@ -301,6 +302,12 @@ def run_company(ctx, params: dict, runner=None) -> dict:
                     missing=missing)
 
     ctx.stage(0.45, "Beste Quelle je Geschäftsjahr auswählen")
+    blocked = ctx.db.blocked_urls()
+    if blocked:
+        skipped = [c for c in cands if c.url in blocked]
+        cands = [c for c in cands if c.url not in blocked]
+        if skipped:
+            ctx.log("info", f"{len(skipped)} als falsch markierte Links übersprungen")
     chosen = select_company_candidates(cands, prefs=prefs,
                                        all_languages=bool(params.get("all_languages", s.all_languages)),
                                        include_sustainability=bool(include["sustainability"]))
@@ -310,8 +317,12 @@ def run_company(ctx, params: dict, runner=None) -> dict:
 
     ctx.stage(0.5, f"{len(chosen)} Dokumente herunterladen")
     base_dir = ctx.library.company_dir(company)
-    with ctx.span(0.5, 0.9 if include["industry"] else 0.97):
+    with ctx.span(0.5, 0.85 if include["industry"] else 0.92):
         dl = download_many(ctx, chosen, scope="company", base_dir=base_dir, lei=company["lei"])
+
+    ctx.stage(0.86 if include["industry"] else 0.93, "Kennzahlen aus ESEF auslesen und Volltext indizieren")
+    figures = financials.extract(ctx, company["lei"])
+    indexed = fulltext.index_pending(ctx, lei=company["lei"])
 
     docs = ctx.db.company_documents(company["lei"])
     coverage = compute_coverage(docs, window)
@@ -325,7 +336,8 @@ def run_company(ctx, params: dict, runner=None) -> dict:
         ctx.log("hint", "Für fehlende Jahre: IR-URL der Berichts-Archivseite eintragen, Websuche aktivieren "
                         "oder PDF-Links manuell ergänzen (Format: 2017: https://…)")
     summary = {"lei": company["lei"], "name": company["name"], "coverage": coverage, "downloads": dl["counts"],
-               "candidates": len(cands), "languages": prefs}
+               "candidates": len(cands), "languages": prefs, "financial_years": figures["years"],
+               "indexed": indexed}
 
     if include["industry"]:
         nace = normalize_nace(params.get("nace") or company.get("nace"))
@@ -460,9 +472,17 @@ def run_industry(ctx, params: dict, runner=None) -> dict:
                 c.meta["via"] = peer["via"]
                 cands.append(c)
 
+    blocked = ctx.db.blocked_urls()
+    cands = [c for c in cands if c.url not in blocked]
     ctx.stage(0.7, f"{len(cands)} Branchendokumente herunterladen")
-    with ctx.span(0.7, 1.0):
+    with ctx.span(0.7, 0.92):
         dl = download_many(ctx, cands, scope="industry", base_dir=base_dir, nace=nace, name_for=industry_filename)
+    ctx.stage(0.93, "Kennzahlen der Wettbewerber auslesen, Volltext indizieren")
+    for lei in sorted({c.lei for c in cands if c.lei}):
+        financials.extract(ctx, lei)
+    if company:
+        financials.extract(ctx, company["lei"])
+    fulltext.index_pending(ctx, nace=nace)
     docs = ctx.db.industry_documents(nace)
     ctx.library.write_manifest(base_dir, {"industry": {"nace": nace, "label_de": label_de, "label_en": label_en,
                                                        "keywords": keywords}}, docs)
@@ -553,7 +573,24 @@ def run_universe(ctx, params: dict, runner=None) -> dict:
     raise ValueError(f"Unbekannte Universumsquelle: {source}")
 
 
+def run_index(ctx, params: dict, runner=None) -> dict:
+    """Maintenance: index all pending documents and recompute key figures for every issuer with ESEF reports."""
+    ctx.stage(0.05, "Volltext indizieren")
+    indexed = fulltext.index_pending(ctx, lei=params.get("lei"))
+    ctx.stage(0.6, "Kennzahlen neu berechnen")
+    leis = [r["lei"] for r in ctx.db.query(
+        "SELECT DISTINCT lei FROM documents WHERE lei IS NOT NULL AND category IN ('esef_report', 'peer_report', "
+        "'esef_package', 'peer_report_package')" + (" AND lei = ?" if params.get("lei") else ""),
+        (params["lei"],) if params.get("lei") else ())]
+    for lei in leis:
+        ctx.check_cancel()
+        financials.extract(ctx, lei)
+    ctx.log("summary", f"Volltext: {indexed.get('ok', 0)} neu indiziert · Kennzahlen für {len(leis)} Emittenten")
+    return {"indexed": indexed, "financials": len(leis)}
+
+
 PIPELINES = {
+    "index": run_index,
     "company": run_company,
     "industry": run_industry,
     "batch": run_batch,
