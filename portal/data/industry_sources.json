@@ -1,0 +1,359 @@
+{
+ "_hinweis": "Startliste frei zugänglicher Verbands- und Behördenseiten je NACE-Abteilung ('*' = branchenübergreifend). Aus der Entwicklungsumgebung nicht erreichbar und daher ungeprüft; eigene Quellen lassen sich im Portal unter 'Branchen' ergänzen.",
+ "*": [
+  {
+   "name": "Europäische Kommission – Binnenmarkt und Industrie",
+   "url": "https://single-market-economy.ec.europa.eu/"
+  },
+  {
+   "name": "OECD",
+   "url": "https://www.oecd.org/"
+  },
+  {
+   "name": "EIB – Investment Report",
+   "url": "https://www.eib.org/"
+  }
+ ],
+ "10": [
+  {
+   "name": "FoodDrinkEurope",
+   "url": "https://www.fooddrinkeurope.eu/"
+  }
+ ],
+ "11": [
+  {
+   "name": "FoodDrinkEurope",
+   "url": "https://www.fooddrinkeurope.eu/"
+  },
+  {
+   "name": "The Brewers of Europe",
+   "url": "https://brewersofeurope.eu/"
+  },
+  {
+   "name": "UNESDA Soft Drinks Europe",
+   "url": "https://www.unesda.eu/"
+  }
+ ],
+ "13": [
+  {
+   "name": "EURATEX",
+   "url": "https://euratex.eu/"
+  }
+ ],
+ "14": [
+  {
+   "name": "EURATEX",
+   "url": "https://euratex.eu/"
+  }
+ ],
+ "17": [
+  {
+   "name": "Cepi",
+   "url": "https://www.cepi.org/"
+  }
+ ],
+ "19": [
+  {
+   "name": "FuelsEurope",
+   "url": "https://www.fuelseurope.eu/"
+  }
+ ],
+ "20": [
+  {
+   "name": "Cefic",
+   "url": "https://cefic.org/"
+  },
+  {
+   "name": "VCI",
+   "url": "https://www.vci.de/"
+  },
+  {
+   "name": "Plastics Europe",
+   "url": "https://plasticseurope.org/"
+  }
+ ],
+ "21": [
+  {
+   "name": "EFPIA",
+   "url": "https://www.efpia.eu/"
+  },
+  {
+   "name": "vfa",
+   "url": "https://www.vfa.de/"
+  }
+ ],
+ "22": [
+  {
+   "name": "Plastics Europe",
+   "url": "https://plasticseurope.org/"
+  }
+ ],
+ "23": [
+  {
+   "name": "CEMBUREAU",
+   "url": "https://www.cembureau.eu/"
+  }
+ ],
+ "24": [
+  {
+   "name": "EUROFER",
+   "url": "https://www.eurofer.eu/"
+  },
+  {
+   "name": "Wirtschaftsvereinigung Stahl",
+   "url": "https://www.stahl-online.de/"
+  }
+ ],
+ "25": [
+  {
+   "name": "Orgalim",
+   "url": "https://orgalim.eu/"
+  }
+ ],
+ "26": [
+  {
+   "name": "ZVEI",
+   "url": "https://www.zvei.org/"
+  },
+  {
+   "name": "Orgalim",
+   "url": "https://orgalim.eu/"
+  },
+  {
+   "name": "DIGITALEUROPE",
+   "url": "https://www.digitaleurope.org/"
+  }
+ ],
+ "27": [
+  {
+   "name": "ZVEI",
+   "url": "https://www.zvei.org/"
+  },
+  {
+   "name": "Orgalim",
+   "url": "https://orgalim.eu/"
+  }
+ ],
+ "28": [
+  {
+   "name": "VDMA",
+   "url": "https://www.vdma.org/"
+  },
+  {
+   "name": "Orgalim",
+   "url": "https://orgalim.eu/"
+  }
+ ],
+ "29": [
+  {
+   "name": "ACEA",
+   "url": "https://www.acea.auto/"
+  },
+  {
+   "name": "VDA",
+   "url": "https://www.vda.de/"
+  },
+  {
+   "name": "CLEPA",
+   "url": "https://clepa.eu/"
+  }
+ ],
+ "30": [
+  {
+   "name": "ASD Europe",
+   "url": "https://www.asd-europe.org/"
+  },
+  {
+   "name": "BDLI",
+   "url": "https://www.bdli.de/"
+  }
+ ],
+ "33": [
+  {
+   "name": "Orgalim",
+   "url": "https://orgalim.eu/"
+  }
+ ],
+ "35": [
+  {
+   "name": "Eurelectric",
+   "url": "https://www.eurelectric.org/"
+  },
+  {
+   "name": "BDEW",
+   "url": "https://www.bdew.de/"
+  },
+  {
+   "name": "SolarPower Europe",
+   "url": "https://www.solarpowereurope.org/"
+  },
+  {
+   "name": "WindEurope",
+   "url": "https://windeurope.org/"
+  }
+ ],
+ "36": [
+  {
+   "name": "EurEau",
+   "url": "https://www.eureau.org/"
+  }
+ ],
+ "41": [
+  {
+   "name": "FIEC",
+   "url": "https://www.fiec.eu/"
+  },
+  {
+   "name": "Hauptverband der Deutschen Bauindustrie",
+   "url": "https://www.bauindustrie.de/"
+  }
+ ],
+ "42": [
+  {
+   "name": "FIEC",
+   "url": "https://www.fiec.eu/"
+  },
+  {
+   "name": "Hauptverband der Deutschen Bauindustrie",
+   "url": "https://www.bauindustrie.de/"
+  }
+ ],
+ "43": [
+  {
+   "name": "FIEC",
+   "url": "https://www.fiec.eu/"
+  }
+ ],
+ "46": [
+  {
+   "name": "EuroCommerce",
+   "url": "https://www.eurocommerce.eu/"
+  }
+ ],
+ "47": [
+  {
+   "name": "EuroCommerce",
+   "url": "https://www.eurocommerce.eu/"
+  },
+  {
+   "name": "Handelsverband Deutschland",
+   "url": "https://einzelhandel.de/"
+  }
+ ],
+ "49": [
+  {
+   "name": "CER – Community of European Railways",
+   "url": "https://www.cer.be/"
+  }
+ ],
+ "50": [
+  {
+   "name": "ECSA – European Community Shipowners' Associations",
+   "url": "https://www.ecsa.eu/"
+  }
+ ],
+ "51": [
+  {
+   "name": "IATA",
+   "url": "https://www.iata.org/"
+  }
+ ],
+ "55": [
+  {
+   "name": "HOTREC",
+   "url": "https://www.hotrec.eu/"
+  }
+ ],
+ "56": [
+  {
+   "name": "HOTREC",
+   "url": "https://www.hotrec.eu/"
+  }
+ ],
+ "61": [
+  {
+   "name": "GSMA",
+   "url": "https://www.gsma.com/"
+  },
+  {
+   "name": "BEREC",
+   "url": "https://www.berec.europa.eu/"
+  }
+ ],
+ "62": [
+  {
+   "name": "Bitkom",
+   "url": "https://www.bitkom.org/"
+  },
+  {
+   "name": "DIGITALEUROPE",
+   "url": "https://www.digitaleurope.org/"
+  }
+ ],
+ "63": [
+  {
+   "name": "Bitkom",
+   "url": "https://www.bitkom.org/"
+  },
+  {
+   "name": "DIGITALEUROPE",
+   "url": "https://www.digitaleurope.org/"
+  }
+ ],
+ "64": [
+  {
+   "name": "European Banking Federation",
+   "url": "https://www.ebf.eu/"
+  },
+  {
+   "name": "EBA",
+   "url": "https://www.eba.europa.eu/"
+  }
+ ],
+ "65": [
+  {
+   "name": "Insurance Europe",
+   "url": "https://www.insuranceeurope.eu/"
+  },
+  {
+   "name": "EIOPA",
+   "url": "https://www.eiopa.europa.eu/"
+  }
+ ],
+ "66": [
+  {
+   "name": "ESMA",
+   "url": "https://www.esma.europa.eu/"
+  }
+ ],
+ "68": [
+  {
+   "name": "EPRA",
+   "url": "https://www.epra.com/"
+  }
+ ],
+ "72": [
+  {
+   "name": "EuropaBio",
+   "url": "https://www.europabio.org/"
+  }
+ ],
+ "79": [
+  {
+   "name": "European Travel Commission",
+   "url": "https://etc-corporate.org/"
+  }
+ ],
+ "86": [
+  {
+   "name": "MedTech Europe",
+   "url": "https://www.medtecheurope.org/"
+  }
+ ],
+ "92": [
+  {
+   "name": "European Gaming and Betting Association",
+   "url": "https://www.egba.eu/"
+  }
+ ]
+}
