@@ -131,6 +131,11 @@ CREATE TABLE IF NOT EXISTS doc_index (
     status TEXT,
     indexed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS company_notes (
+    lei TEXT PRIMARY KEY,
+    text TEXT NOT NULL DEFAULT '',
+    updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS blocked_urls (
     url TEXT PRIMARY KEY,
     lei TEXT,
@@ -282,6 +287,13 @@ class Database:
             "FROM companies c JOIN documents d ON d.lei = c.lei AND d.scope = 'company' "
             "GROUP BY c.lei ORDER BY c.name")
 
+    def companies_with_figures(self) -> list[dict]:
+        """Companies with extracted key figures: own downloads and peers from industry packages."""
+        return self.query(
+            "SELECT c.lei, c.name, c.country, c.nace, MAX(f.fiscal_year) AS latest, "
+            "EXISTS (SELECT 1 FROM documents d WHERE d.lei = c.lei AND d.scope = 'company') AS in_library "
+            "FROM companies c JOIN financials f ON f.lei = c.lei GROUP BY c.lei ORDER BY c.name")
+
     def library_industries(self) -> list[dict]:
         return self.query("SELECT nace, COUNT(*) AS documents, MAX(created_at) AS updated_at FROM documents "
                           "WHERE scope = 'industry' GROUP BY nace ORDER BY nace")
@@ -323,6 +335,16 @@ class Database:
             self._conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
             self._conn.execute("DELETE FROM doc_text WHERE doc_id = ?", (doc_id,))
             self._conn.execute("DELETE FROM doc_index WHERE doc_id = ?", (doc_id,))
+
+    def notes(self, lei: str) -> dict:
+        return self.one("SELECT text, updated_at FROM company_notes WHERE lei = ?", (lei,)) or {"text": "",
+                                                                                                "updated_at": None}
+
+    def save_notes(self, lei: str, text: str) -> dict:
+        stamp = now_iso()
+        self.execute("INSERT INTO company_notes (lei, text, updated_at) VALUES (?, ?, ?) ON CONFLICT(lei) "
+                     "DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at", (lei, text, stamp))
+        return {"text": text, "updated_at": stamp}
 
     def block_url(self, url: str, lei: str | None, reason: str = "") -> None:
         self.execute("INSERT OR REPLACE INTO blocked_urls (url, lei, reason, created_at) VALUES (?, ?, ?, ?)",

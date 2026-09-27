@@ -55,7 +55,8 @@ class IrSite:
     def discover(self, company: dict, years: set[int], prefs: list[str], today: date | None = None) -> list[Candidate]:
         seeds = [u for u in (company.get("ir_url"), company.get("website")) if u]
         if not seeds:
-            self.ctx.log("warn", "Keine Website/IR-Seite bekannt – bitte IR-URL angeben, sonst fehlen PDF-Berichte")
+            self.ctx.log("warn", "Keine Website/IR-Seite bekannt – bitte IR-URL angeben, sonst fehlen PDF-Berichte",
+                         step="irsite", skipped="no_website")
             return []
         s = self.ctx.settings
         crawler = SiteCrawler(self.ctx, hints=IR_HINTS, max_pages=s.crawl_max_pages, max_depth=s.crawl_max_depth,

@@ -251,7 +251,7 @@ def run_company(ctx, params: dict, runner=None) -> dict:
         include["sustainability"] = s.include_sustainability
     resolver = Resolver(ctx)
 
-    ctx.stage(0.01, "Unternehmen auflösen (GLEIF-Register)")
+    ctx.stage(0.01, "Unternehmen auflösen (GLEIF-Register)", "resolve")
     company = resolver.resolve(query=params.get("query"), lei=params.get("lei"))
     overrides = {k: params[k] for k in ("ir_url", "website", "nace", "keywords") if params.get(k)}
     if overrides.get("nace"):
@@ -259,18 +259,20 @@ def run_company(ctx, params: dict, runner=None) -> dict:
     if overrides:
         company = ctx.db.update_company_fields(company["lei"], overrides) or company
     if ctx.job_id is not None:
-        ctx.db.update_job(ctx.job_id, title=f"{company['name']} – Geschäftsberichte")
+        ctx.db.update_job(ctx.job_id, title=company["name"])
     ctx.log("info", f"Unternehmen: {company['name']} · LEI {company['lei']} · {company.get('country') or '?'}")
 
-    ctx.stage(0.04, "Stammdaten anreichern (ISIN, Website, Branche)")
+    ctx.stage(0.04, "Stammdaten anreichern (ISIN, Website, Branche)", "enrich")
     company = resolver.enrich(company)
     prefs = language_preferences(params.get("languages") or s.languages, company.get("country"))
     window = year_window(n, today)
     years = set(window)
     cands: list[Candidate] = []
 
+    if not include["esef"]:
+        ctx.skip("esef", "deselected", "ESEF abgewählt")
     if include["esef"]:
-        ctx.stage(0.08, "ESEF-Jahresfinanzberichte suchen (filings.xbrl.org)")
+        ctx.stage(0.08, "ESEF-Jahresfinanzberichte suchen (filings.xbrl.org)", "esef")
         try:
             filings = Esef(ctx).filings(company["lei"])
             ctx.log("info", f"ESEF: {len(filings)} Berichtsperioden gefunden",
@@ -281,8 +283,10 @@ def run_company(ctx, params: dict, runner=None) -> dict:
         except HttpError as err:
             ctx.log("warn", f"ESEF-Quelle nicht erreichbar: {err}")
 
+    if not include["pdf"]:
+        ctx.skip("irsite", "deselected", "PDF-Suche auf der Website abgewählt")
     if include["pdf"]:
-        ctx.stage(0.15, "IR-Website nach PDF-Geschäftsberichten durchsuchen")
+        ctx.stage(0.15, "IR-Website nach PDF-Geschäftsberichten durchsuchen", "irsite")
         cands += IrSite(ctx).discover(company, years, prefs, today)
 
     cands += parse_manual_urls(params.get("urls"), today)
@@ -293,15 +297,19 @@ def run_company(ctx, params: dict, runner=None) -> dict:
     missing = sorted((y for y in range(today.year - n, today.year) if y not in have),
                      key=lambda y: (y in esef_years, -y))
     search = WebSearch(ctx)
+    if not include["websearch"]:
+        ctx.skip("websearch", "deselected", "Websuche abgewählt")
+    elif not missing:
+        ctx.skip("websearch", "not_needed", "Websuche nicht nötig – alle PDF-Jahre gefunden")
     if include["websearch"] and missing:
         if search.enabled:
-            ctx.stage(0.4, f"Websuche für fehlende PDF-Jahre: {', '.join(map(str, missing))}")
+            ctx.stage(0.4, f"Websuche für fehlende PDF-Jahre: {', '.join(map(str, missing))}", "websearch")
             cands += search.annual_reports(company, missing, prefs, today)
         else:
             ctx.log("info", "Websuche nicht konfiguriert (Einstellungen) – Lücken bleiben offen",
-                    missing=missing)
+                    missing=missing, step="websearch", skipped="not_configured")
 
-    ctx.stage(0.45, "Beste Quelle je Geschäftsjahr auswählen")
+    ctx.stage(0.45, "Beste Quelle je Geschäftsjahr auswählen", "select")
     blocked = ctx.db.blocked_urls()
     if blocked:
         skipped = [c for c in cands if c.url in blocked]
@@ -315,12 +323,12 @@ def run_company(ctx, params: dict, runner=None) -> dict:
     window = final_window(found, n, today)
     chosen = [c for c in chosen if c.fiscal_year in window or c.source == "manual"]
 
-    ctx.stage(0.5, f"{len(chosen)} Dokumente herunterladen")
+    ctx.stage(0.5, f"{len(chosen)} Dokumente herunterladen", "download")
     base_dir = ctx.library.company_dir(company)
     with ctx.span(0.5, 0.85 if include["industry"] else 0.92):
         dl = download_many(ctx, chosen, scope="company", base_dir=base_dir, lei=company["lei"])
 
-    ctx.stage(0.86 if include["industry"] else 0.93, "Kennzahlen aus ESEF auslesen und Volltext indizieren")
+    ctx.stage(0.86 if include["industry"] else 0.93, "Kennzahlen aus ESEF auslesen und Volltext indizieren", "analyze")
     figures = financials.extract(ctx, company["lei"])
     indexed = fulltext.index_pending(ctx, lei=company["lei"])
 
@@ -342,15 +350,16 @@ def run_company(ctx, params: dict, runner=None) -> dict:
     if include["industry"]:
         nace = normalize_nace(params.get("nace") or company.get("nace"))
         if nace:
-            ctx.stage(0.9, "Branchenpaket zusammenstellen")
-            with ctx.span(0.9, 0.99):
+            ctx.stage(0.9, "Branchenpaket zusammenstellen", "industry")
+            with ctx.span(0.9, 0.99), ctx.within("industry", "industry"):
                 summary["industry"] = run_industry(ctx, {
                     "nace": nace, "keywords": params.get("keywords") or company.get("keywords"),
                     "country": company.get("country"), "company_lei": company["lei"], "years": n,
                     "peers": params.get("peers"), "include_industry": params.get("include_industry"),
                     "today": params.get("today")})
         else:
-            ctx.log("warn", "Kein NACE-Code gesetzt – Branchenreports übersprungen. Bitte Branche wählen.")
+            ctx.log("warn", "Kein NACE-Code gesetzt – Branchenreports übersprungen. Bitte Branche wählen.",
+                    step="industry", skipped="no_nace")
     return summary
 
 
@@ -421,15 +430,18 @@ def run_industry(ctx, params: dict, runner=None) -> dict:
     country = (params.get("country") or "").upper() or None
     company = ctx.db.company(params["company_lei"]) if params.get("company_lei") else None
     if ctx.job_id is not None and not company:
-        ctx.db.update_job(ctx.job_id, title=f"Branche NACE {nace} – {label_de}")
+        ctx.db.update_job(ctx.job_id, title=f"NACE {nace} · {label_de}")
     ctx.log("info", f"Branche NACE {nace}: {label_de} · Zeitraum ab {year_from}")
     base_dir = ctx.library.industry_dir(nace)
     relevance = keywords + [label_de, _topic(label_en)]
     cands: list[Candidate] = []
     stats = defaultdict(int)
 
+    for key in ("statistics", "studies", "associations", "peers"):
+        if not include[key]:
+            ctx.skip(key, "deselected", f"{key} abgewählt")
     if include["statistics"]:
-        ctx.stage(0.02, "Amtliche Statistik (Eurostat)")
+        ctx.stage(0.02, "Amtliche Statistik (Eurostat)", "statistics")
         eurostat = Eurostat(ctx)
         for spec in eurostat.datasets_for(nace):
             ctx.check_cancel()
@@ -438,21 +450,25 @@ def run_industry(ctx, params: dict, runner=None) -> dict:
                 stats[store_statistics(ctx, nace, spec, data, base_dir)] += 1
 
     if include["studies"]:
-        ctx.stage(0.2, "Open-Access-Studien (OpenAlex)")
+        ctx.stage(0.2, "Open-Access-Studien (OpenAlex)", "studies")
         topic = " ".join(keywords[:3]) or _topic(label_en)
         cands += OpenAlex(ctx).studies(f"{topic} industry market", year_from, s.openalex_max)
 
     if include["associations"]:
-        ctx.stage(0.3, "Verbands- und Behördenpublikationen")
+        ctx.stage(0.3, "Verbands- und Behördenpublikationen", "associations")
         cands += Curated(ctx).reports(nace, relevance, year_from, today)
 
     search = WebSearch(ctx)
+    if not include["websearch"]:
+        ctx.skip("websearch", "deselected", "Websuche abgewählt")
+    elif not search.enabled:
+        ctx.skip("websearch", "not_configured", "Websuche nicht eingerichtet (Einstellungen)")
     if include["websearch"] and search.enabled:
-        ctx.stage(0.5, "Websuche nach Branchenreports")
+        ctx.stage(0.5, "Websuche nach Branchenreports", "websearch")
         cands += search.industry_reports(_topic(label_en), label_de, keywords, year_from, limit=10, today=today)
 
     if include["peers"]:
-        ctx.stage(0.55, "Wettbewerber ermitteln und ESEF-Berichte laden")
+        ctx.stage(0.55, "Wettbewerber ermitteln und ESEF-Berichte laden", "peers")
         peers = find_peers(ctx, nace, company, params.get("peers"))
         ctx.log("info", f"{len(peers)} Wettbewerber", peers=[f"{p['name']} ({p['via']})" for p in peers])
         esef = Esef(ctx)
@@ -474,10 +490,10 @@ def run_industry(ctx, params: dict, runner=None) -> dict:
 
     blocked = ctx.db.blocked_urls()
     cands = [c for c in cands if c.url not in blocked]
-    ctx.stage(0.7, f"{len(cands)} Branchendokumente herunterladen")
+    ctx.stage(0.7, f"{len(cands)} Branchendokumente herunterladen", "download")
     with ctx.span(0.7, 0.92):
         dl = download_many(ctx, cands, scope="industry", base_dir=base_dir, nace=nace, name_for=industry_filename)
-    ctx.stage(0.93, "Kennzahlen der Wettbewerber auslesen, Volltext indizieren")
+    ctx.stage(0.93, "Kennzahlen der Wettbewerber auslesen, Volltext indizieren", "analyze")
     for lei in sorted({c.lei for c in cands if c.lei}):
         financials.extract(ctx, lei)
     if company:
@@ -509,7 +525,7 @@ def run_batch(ctx, params: dict, runner=None) -> dict:
     child = {k: params[k] for k in ("years", "include", "languages", "include_industry") if k in params}
     for c in companies:
         ctx.check_cancel()
-        runner.submit("company", {**child, "lei": c["lei"]}, title=f"{c['name']} – Geschäftsberichte",
+        runner.submit("company", {**child, "lei": c["lei"]}, title=c["name"],
                       parent_id=ctx.job_id)
     ctx.log("summary", f"{len(companies)} Unternehmensaufträge eingereiht")
     return {"enqueued": len(companies)}
@@ -525,7 +541,7 @@ def run_universe(ctx, params: dict, runner=None) -> dict:
     source = params.get("source") or "esef"
     countries = frozenset(c.upper() for c in (s.universe_countries or [])) or EU_EEA
     if source == "esef":
-        ctx.stage(0.02, "ESEF-Emittenten von filings.xbrl.org laden")
+        ctx.stage(0.02, "ESEF-Emittenten von filings.xbrl.org laden", "load")
         count = 0
         batch = []
         for lei, name, country in Esef(ctx).issuers(max_pages=int(params.get("max_pages") or 1000)):
@@ -546,9 +562,9 @@ def run_universe(ctx, params: dict, runner=None) -> dict:
         ctx.log("summary", f"Universum (ESEF): {count} Emittenten")
         return {"source": "esef", "issuers": count}
     if source == "firds":
-        ctx.stage(0.02, "ESMA FIRDS: aktuelle Aktien-Referenzdaten laden (große Dateien)")
+        ctx.stage(0.02, "ESMA FIRDS: aktuelle Aktien-Referenzdaten laden (große Dateien)", "load")
         securities = Firds(ctx).securities(countries, tuple(s.universe_cfi_prefixes))
-        ctx.stage(0.7, f"{len(securities)} Aktien speichern")
+        ctx.stage(0.7, f"{len(securities)} Aktien speichern", "save")
         ctx.db.upsert_securities(list(securities.values()))
         by_lei: dict[str, list[dict]] = defaultdict(list)
         for sec in securities.values():
@@ -557,7 +573,7 @@ def run_universe(ctx, params: dict, runner=None) -> dict:
         new = [lei for lei in by_lei if not ctx.db.company(lei)]
         names = {}
         if new and params.get("gleif_names", True):
-            ctx.stage(0.8, f"Namen für {len(new)} neue Emittenten bei GLEIF abfragen")
+            ctx.stage(0.8, f"Namen für {len(new)} neue Emittenten bei GLEIF abfragen", "names")
             try:
                 names = {r["lei"]: r for r in Gleif(ctx).by_leis(new)}
             except HttpError as err:
@@ -575,9 +591,9 @@ def run_universe(ctx, params: dict, runner=None) -> dict:
 
 def run_index(ctx, params: dict, runner=None) -> dict:
     """Maintenance: index all pending documents and recompute key figures for every issuer with ESEF reports."""
-    ctx.stage(0.05, "Volltext indizieren")
+    ctx.stage(0.05, "Volltext indizieren", "index")
     indexed = fulltext.index_pending(ctx, lei=params.get("lei"))
-    ctx.stage(0.6, "Kennzahlen neu berechnen")
+    ctx.stage(0.6, "Kennzahlen neu berechnen", "figures")
     leis = [r["lei"] for r in ctx.db.query(
         "SELECT DISTINCT lei FROM documents WHERE lei IS NOT NULL AND category IN ('esef_report', 'peer_report', "
         "'esef_package', 'peer_report_package')" + (" AND lei = ?" if params.get("lei") else ""),

@@ -12,14 +12,8 @@ from .net import HttpClient
 from .pipeline import describe_error, run_job
 from .storage import Library
 
-JOB_TITLES = {
-    "company": "Geschäftsberichte",
-    "industry": "Branchenpaket",
-    "batch": "Stapelauftrag",
-    "refresh": "Beobachtungsliste aktualisieren",
-    "universe": "Universum aktualisieren",
-    "index": "Volltext und Kennzahlen aktualisieren",
-}
+# Titles stay language-neutral (a company name, "NACE 28", a source); the UI adds the translated job type.
+JOB_TITLES: dict[str, str] = {}
 
 
 class App:
@@ -77,7 +71,7 @@ class JobRunner:
         if now - last < days * 86400:
             return None
         self.app.db.set_value("state:last_auto_refresh", now)
-        return self.submit("refresh", {"auto": True}, title="Automatische Aktualisierung der Beobachtungsliste")
+        return self.submit("refresh", {"auto": True}, title="auto")
 
     def next_auto_refresh(self) -> float | None:
         days = int(self.app.settings.auto_refresh_days or 0)
@@ -104,7 +98,7 @@ class JobRunner:
             event.set()
 
     def submit(self, kind: str, params: dict, title: str | None = None, parent_id: int | None = None) -> int:
-        job_id = self.app.db.create_job(kind, title or JOB_TITLES.get(kind, kind), params, parent_id)
+        job_id = self.app.db.create_job(kind, title or JOB_TITLES.get(kind, ""), params, parent_id)
         self._wake.set()
         return job_id
 
@@ -154,6 +148,6 @@ class JobRunner:
 
     def run_sync(self, kind: str, params: dict, title: str | None = None) -> dict:
         """Run a job in the calling thread (CLI and tests)."""
-        job_id = self.app.db.create_job(kind, title or JOB_TITLES.get(kind, kind), params, status="running")
+        job_id = self.app.db.create_job(kind, title or JOB_TITLES.get(kind, ""), params, status="running")
         self.app.db.update_job(job_id, started_at=now_iso())
         return self.run(self.app.db.job(job_id))

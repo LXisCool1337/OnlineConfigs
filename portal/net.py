@@ -222,13 +222,15 @@ class HttpClient:
     # --- requests ---------------------------------------------------------------------
 
     def _open(self, url: str, *, headers: dict | None = None, data: bytes | None = None,
-              method: str = "GET", timeout: float | None = None, check_robots: bool = False):
+              method: str = "GET", timeout: float | None = None, check_robots: bool = False,
+              retries: int | None = None):
         if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
             raise HttpError(url, 0, "nur http(s) erlaubt")
         if check_robots and not self.allowed(url):
             raise BlockedByRobots(url)
         hdrs = {"User-Agent": self.user_agent, "Accept-Language": "en, de;q=0.8, *;q=0.5"}
         hdrs.update(headers or {})
+        max_retries = self.s.retries if retries is None else retries
         attempt = 0
         while True:
             self._wait_turn(url)
@@ -244,7 +246,7 @@ class HttpClient:
                 except Exception:  # noqa: BLE001 - best effort only
                     detail = ""
                 err.close()
-                if err.code in RETRY_STATUS and attempt < self.s.retries:
+                if err.code in RETRY_STATUS and attempt < max_retries:
                     self._backoff(attempt, retry_after)
                     attempt += 1
                     continue
@@ -253,20 +255,20 @@ class HttpClient:
                     ConnectionError, ssl.SSLError) as err:
                 reason = str(getattr(err, "reason", err))
                 # A proxy that refuses the tunnel is a policy decision; retrying will not help.
-                if "Tunnel connection failed: 40" in reason or attempt >= self.s.retries:
+                if "Tunnel connection failed: 40" in reason or attempt >= max_retries:
                     raise HttpError(url, 0, reason) from None
                 self._backoff(attempt, None)
                 attempt += 1
 
     def get(self, url: str, *, params: dict | list | None = None, accept: str = "*/*",
             headers: dict | None = None, check_robots: bool = False, max_bytes: int = 30_000_000,
-            timeout: float | None = None, html_only: bool = False) -> Response:
+            timeout: float | None = None, html_only: bool = False, retries: int | None = None) -> Response:
         if params:
             query = urllib.parse.urlencode(params, doseq=True, quote_via=urllib.parse.quote)
             url = f"{url}{'&' if '?' in url else '?'}{query}"
         hdrs = {"Accept": accept, "Accept-Encoding": "gzip"}
         hdrs.update(headers or {})
-        with self._open(url, headers=hdrs, check_robots=check_robots, timeout=timeout) as resp:
+        with self._open(url, headers=hdrs, check_robots=check_robots, timeout=timeout, retries=retries) as resp:
             final = resp.geturl()
             if check_robots and final != url and not self.allowed(final):
                 raise BlockedByRobots(final)

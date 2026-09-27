@@ -61,7 +61,7 @@ Der Grundsatz: **amtliche, maschinenlesbare Quellen zuerst, die Website des Unte
 
 ```mermaid
 flowchart LR
-  UI["Weboberfläche<br/>(static/, Deutsch)"] -- JSON / SSE --> API["server.py<br/>HTTP-API"]
+  UI["Weboberfläche<br/>(static/, Deutsch + Englisch)"] -- JSON / SSE --> API["server.py<br/>HTTP-API"]
   CLI["python -m portal"] --> APP
   API --> APP["app.py<br/>App + JobRunner"]
   APP --> PIPE["pipeline.py<br/>Unternehmen · Branche · Stapel · Universum"]
@@ -86,6 +86,9 @@ flowchart LR
 | Katalog | `db.py` | Unternehmen (mit FTS5-Volltextsuche), Wertpapiere, Dokumente, Aufträge, Ereignisse, Einstellungen |
 | Ablage | `storage.py` | Ordnerstruktur, `manifest.json`, ZIP-Export |
 | Server | `server.py` | JSON-API, Server-Sent Events für Live-Fortschritt, Dokumentenanzeige, Sicherheitsprüfungen |
+| Excel-Export | `xlsx.py` | schreibt echte `.xlsx`-Dateien (Office Open XML) mit Zahlenformaten und fixierter Kopfzeile, ohne Zusatzpaket |
+| Quellen-Check | `diagnostics.py` | prüft parallel, ob GLEIF, filings.xbrl.org, Wikidata, Eurostat, OpenAlex, ESMA und die Websuche erreichbar sind |
+| Oberfläche | `static/js/`, `static/i18n/` | ES-Module ohne Build-Schritt: Router, eine Datei je Seite, Hilfe mit Glossar, Diagramme als SVG, alle Texte in `de.json` und `en.json` |
 
 **Technikwahl:** reine Python-Standardbibliothek (3.11+), wie das bestehende `charts/build_charts.py`. Es gibt keine Abhängigkeiten und nichts zu installieren; das Portal läuft auf jedem Rechner mit Python. SQLite genügt für Millionen von Dokumentzeilen; die Dateien selbst liegen im Dateisystem.
 
@@ -161,7 +164,9 @@ Die Regeln dahinter:
 - Die Zahlenformate (`num-dot-decimal`, `num-comma-decimal`, `fixed-zero`, Skalierung, `sign="-"`) werden korrekt umgerechnet.
 - Es gilt der **ursprünglich berichtete** Wert. Weicht der Vorjahreswert im Folgebericht ab, erscheint er als Restatement-Hinweis.
 
-Sechs ESEF-Berichte ergeben so sieben Jahre Zahlenreihe. Angezeigt werden vier Diagramme (Umsatz, EBIT-Marge, Free Cashflow, Eigenkapitalquote) und eine Tabelle aller Werte. Der Export als CSV ist Excel-tauglich (Semikolon, Dezimalkomma, UTF-8 mit BOM).
+Sechs ESEF-Berichte ergeben so sieben Jahre Zahlenreihe. Oben stehen Kacheln mit dem Wichtigsten (Umsatz mit Veränderung zum Vorjahr, durchschnittliches Wachstum, Marge, Ergebnis je Aktie), darunter vier Diagramme: Umsatz; EBIT-Marge, sonst Nettomarge; Free Cashflow, sonst Ergebnis je Aktie; Eigenkapitalquote, sonst Umsatzwachstum – je nachdem, was die Berichte hergeben. Alle Werte gibt es als Tabelle, als **Excel-Datei** (`.xlsx` mit den Blättern Kennzahlen, Dokumente, Info) und als CSV (Semikolon, Dezimalkomma, UTF-8 mit BOM).
+
+**Unternehmensvergleich.** Bis zu vier Unternehmen – eigene und Wettbewerber aus Branchenpaketen – als Linien über die Jahre, wahlweise absolut oder indexiert (erstes gemeinsames Jahr = 100). Bei unterschiedlichen Währungen werden Beträge automatisch indexiert. Dazu eine Momentaufnahme des letzten Geschäftsjahres mit Median und ein Excel-Export (ein Blatt je Kennzahl). Die Auswahl steht in der Adresse (`#/compare?leis=…`) und lässt sich als Link weitergeben. Auf der Unternehmensseite öffnet „Mit Wettbewerbern vergleichen“ den Vergleich mit den Wettbewerbern aus dem Branchenpaket.
 
 **Wettbewerbervergleich.** Aus den ESEF-Berichten der Wettbewerber im Branchenpaket entsteht je Unternehmen das letzte Geschäftsjahr mit Wachstum, Margen, Eigenkapitalquote und ROE, dazu der Median. Das gewählte Unternehmen ist hervorgehoben (Akzentfarbe, die anderen grau). Verhältniszahlen sind über Währungen hinweg vergleichbar; absolute Beträge tragen ihre Währung.
 
@@ -169,9 +174,19 @@ Sechs ESEF-Berichte ergeben so sieben Jahre Zahlenreihe. Angezeigt werden vier D
 
 **Übersicht und Pflege.**
 - Die Startseite zeigt Bestand, Speicher, zuletzt geladene Dokumente, Unternehmen mit Lücken, laufende Aufträge und die Beobachtungsliste.
-- Ein Klick auf eine fehlende Jahreszelle nimmt direkt einen PDF-Link an.
-- „Falsch“ löscht ein Dokument und sperrt dessen Link. Beim nächsten Lauf kommt der Ersatzkandidat zum Zug.
+- In der Jahresübersicht nimmt „+ Link“ bei einem fehlenden Jahr direkt die Adresse einer PDF-Datei an.
+- ✕ („Falsch“) löscht ein Dokument und sperrt dessen Link. Beim nächsten Lauf kommt der Ersatzkandidat zum Zug.
 - Mit `auto_refresh_days` holt der Server die Beobachtungsliste selbstständig nach, z. B. alle 7 Tage.
+- Notizen je Unternehmen werden automatisch in der Datenbank gespeichert.
+
+**Bedienung.** Die Oberfläche soll ohne Vorwissen verständlich sein:
+- **Geführter Einstieg.** Die Startseite erklärt den Ablauf in drei Schritten und zeigt eine Einrichtungs-Checkliste (Kontakt-E-Mail, optional Websuche und `pdftotext`). „Datenquellen prüfen“ zeigt in Sekunden, ob Firewall oder Proxy eine Quelle blockieren.
+- **Hilfe überall.** Jeder Fachbegriff (ESEF, LEI, ISIN, NACE, Abdeckung, Branchenpaket …) hat ein „?“, das die Hilfe beim passenden Glossareintrag öffnet. Die Hilfe enthält außerdem eine Anleitung und häufige Fragen („Warum fehlen Jahre?“).
+- **Ein Knopf.** Auf der Unternehmensseite genügt „Jahresberichte laden“; Jahre, Sprache, ESEF-Formate, Quellen und eigene Links liegen eingeklappt unter „Weitere Optionen“. Fehlt für das Branchenpaket die Branche, sagt das Feld selbst, was zu tun ist.
+- **Fortschritt als Checkliste.** Statt eines Protokolls sieht man die Schritte (Unternehmen bestimmen, ESEF suchen, PDF suchen, Websuche, Auswahl, Download, Auswertung, Branchenpaket) mit Status, Begründung für übersprungene Schritte und Warnungen. Am Ende steht eine Zusammenfassung („10 von 10 Jahren“, neue Dateien, Kennzahlen, fehlende Jahre) mit den nächsten Schritten. Das ausführliche Protokoll bleibt aufklappbar.
+- **Jahresübersicht** mit einer Karte je Geschäftsjahr: PDF und ESEF, Sprache, Vorschau im Portal, Download, ✕ für falsche Dateien, „+ Link“ für Lücken.
+- **Vorschau** von PDF und ESEF-Bericht in einem Fenster, bei Volltext-Treffern direkt auf der Fundstelle.
+- **Deutsch/Englisch** und **hell/dunkel/System** umschaltbar (gilt nur im jeweiligen Browser), Druckansicht für einen Unternehmensbericht, Handy-tauglich, Tastatur: `/` springt ins Suchfeld.
 
 ---
 
@@ -239,7 +254,7 @@ library/
 ## 11. Qualitätssicherung
 
 - **Nachgebautes Internet** ([`tests/fakeweb.py`](../tests/fakeweb.py)): GLEIF, filings.xbrl.org, Wikidata, Eurostat, OpenAlex, ESMA FIRDS, Brave, ein Branchenverband und eine Unternehmenswebsite. Die Website hat 10 Berichtsjahre in DE/EN, ein Archiv mit Links ohne aussagekräftigen Text, ein PDF nur in der Sitemap, ein PDF auf einem CDN, einen defekten Link, robots-gesperrte Bereiche und Störer (Halbjahres-, Nachhaltigkeits-, Vergütungsbericht, Präsentation, Kurzfassung, HV-Einladung).
-- **54 Tests** (`python3 -m unittest discover -s tests -t .`):
+- **62 Tests** (`python3 -m unittest discover -s tests -t .`):
   - 10/10 Jahre in der richtigen Sprache, die Kurzfassung verliert, der Ersatz springt bei einem defekten Link ein
   - robots.txt wird nie verletzt
   - Hashes und Manifest stimmen, ein zweiter Lauf lädt nichts doppelt
@@ -248,11 +263,14 @@ library/
   - Branchenpaket mit genau den erwarteten Dateien
   - Universum aus ESEF und FIRDS, Stapel
   - HTTP-API, Live-Stream, ZIP-Export sowie Sicherheitsprüfungen (Host, Herkunft, JSON-Pflicht, Traversal, Token, maskierte Schlüssel)
+  - Notizen, Quellen-Check, Vergleich und beide Excel-Exporte (gültige `.xlsx`-Dateien mit den richtigen Blättern)
+  - Checkliste: Schritte in der richtigen Reihenfolge, das Branchenpaket im Unternehmensauftrag meldet Unterschritte
+  - Oberflächentexte: jeder verwendete Schlüssel existiert auf Deutsch und Englisch, mit denselben Platzhaltern
   - Klassifikation mit Beispielen in 10 Sprachen
   - Kennzahlen aus Inline-XBRL: deutsches und englisches Zahlenformat, Vorzeichen, Nullstrich, Vorjahreswerte, Restatement, Segmentwerte ausgeschlossen, Ersatz durch das ZIP-Paket
   - Volltextsuche inkl. PDF-Seiten mit einem nachgebildeten `pdftotext`, Wettbewerbervergleich, Ersatz eines als falsch markierten Dokuments, automatische Aktualisierung
   - **Krones-Szenario** ([`tests/krones_scenario.py`](../tests/krones_scenario.py)): jede Funktion mit Krones AG (ISIN DE0006335003) und den Krones-Zahlen aus `data/krones_financials_2015_2025.csv`. Das Portal muss Umsatz, EBT, Jahresergebnis und EPS 2019–2025 exakt wiedergeben, inklusive Verlustjahr 2020, −16,1 % Umsatz 2020 und +70 % bis 2025. Die Quellen sind nachgebildet; die LEI ist ein Platzhalter.
-- **Oberfläche** mit Headless-Chromium durchgespielt: Suche, Abruf, Live-Protokoll, Abdeckung, Kennzahlen-Diagramme mit Tooltip, Vergleich, Volltext, Übersicht, Dunkelmodus, Handy-Breite ohne horizontales Scrollen, keine Konsolenfehler.
+- **Oberfläche** mit Headless-Chromium im Krones-Szenario durchgespielt: Einrichtung und Quellen-Check, Suche per Tastatur, Laden mit Checkliste, Jahresübersicht, Vorschau, Kennzahlen und Excel, Notizen, falsche Datei ersetzen, Beobachten, Stammdaten, Vergleich mit Wettbewerbern, Branchenpaket, Volltext, Bibliothek, Aufträge, Hilfe, Englisch und dunkel, Druckansicht, Handy-Breite ohne horizontales Scrollen, keine Konsolenfehler.
 - **Kennzahlen im Betrieb:** Abdeckungsquote (Jahre mit Bericht ÷ Zieljahre) je Unternehmen und Land, Anteil Ersatzkandidaten, Fehlerquote je Quelle, robots-Blockaden. Das alles lässt sich aus `documents` und `job_events` ablesen.
 
 ---
@@ -295,6 +313,7 @@ Die Konfiguration steht in `portal.toml` (Vorlage: [`portal.example.toml`](../po
 | **1 – Fundament** | alles in diesem Dokument: Universum, 10-Jahres-Abruf aus ESEF + IR-Website + Websuche + manuell, Branchenpaket, Oberfläche, CLI, Stapel, Tests | **umgesetzt** |
 | 1b – Abnahme live | Lauf gegen die echten Quellen mit Stichprobe aus DE, FR, IT, ES, NL, SE, PL; Feinjustierung der Signalwörter und Datensatz-Codes | nächster Schritt |
 | 2 – Auswertung | Kennzahlen aus Inline-XBRL mit Diagrammen und CSV, Wettbewerbervergleich, Volltextsuche, Übersicht, automatische Aktualisierung, Lücken schließen und falsche Dokumente ersetzen | **umgesetzt** |
+| 2a – Bedienung | geführter Einstieg, Hilfe und Glossar, Checkliste statt Protokoll, Jahresübersicht mit Vorschau, Vergleich von bis zu 4 Unternehmen, Notizen, Excel-Export, Quellen-Check, Deutsch/Englisch, hell/dunkel, Druckansicht | **umgesetzt** |
 | 2b – Auswertung | NACE-Vorschlag aus ESEF-Tätigkeitsbeschreibung; Headless-Browser für JavaScript-Seiten; Kennzahlen vor 2019 aus PDF-Tabellen | geplant |
 | 3 – Quellen | OAM-Konnektoren, wo zulässig; ESAP, sobald verfügbar; Lizenz-Konnektoren (z. B. Statista-API) mit eigenem Schlüssel; Benachrichtigung bei neuen Berichten | geplant |
 | 4 – Team | Mehrbenutzer, gemeinsame Bibliothek auf Server/NAS, Volltextsuche über alle Berichte | optional |

@@ -3,4 +3,4 @@
 Pure Python standard library (3.11+), no third-party dependencies. See docs/PLAN.md.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.2.0"

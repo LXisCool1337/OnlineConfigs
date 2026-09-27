@@ -11,13 +11,12 @@ import mimetypes
 import re
 import sqlite3
 import time
-from datetime import datetime, timezone
 import traceback
-from datetime import date
+from datetime import date, datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlsplit
 
-from . import financials, fulltext
+from . import __version__, diagnostics, financials, fulltext
 from .config import PACKAGE_DIR
 from .identifiers import COUNTRY_NAMES, EU_EEA, nace_divisions, nace_label, normalize_nace
 from .pipeline import CATEGORY_LABELS, compute_coverage, final_window
@@ -28,6 +27,8 @@ STATIC_DIR = PACKAGE_DIR / "static"
 MIME_BY_KIND = {"pdf": "application/pdf", "xhtml": "application/xhtml+xml", "html": "text/html",
                 "xml": "application/xml", "zip": "application/zip", "json": "application/json",
                 "csv": "text/csv; charset=utf-8", "gzip": "application/gzip"}
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+LEI_PATTERN = re.compile(r"^[A-Z0-9]{20}$")
 INLINE_KINDS = {"pdf", "xhtml", "html", "xml"}
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -57,16 +58,22 @@ def make_handler(app):
 
     @route("GET", r"/api/health")
     def health(h, m):
-        return {"ok": True, "contact_email_set": bool(app.settings.contact_email),
-                "search_enabled": bool(app.settings.search_provider)}
+        return {"ok": True, "version": __version__, "contact_email_set": bool(app.settings.contact_email),
+                "search_enabled": bool(app.settings.search_provider), "pdftotext": fulltext.pdftotext_available(),
+                "library_dir": str(app.library.root)}
 
     @route("GET", r"/api/search")
     def search(h, m):
         q = (h.query.get("q") or [""])[0].strip()
         if len(q) < 2:
-            return {"results": [], "warning": None}
+            return {"results": [], "warning": None, "warning_code": None}
         results, warning = Resolver(app.context()).search(q, limit=15)
-        return {"results": [_company_summary(c) for c in results], "warning": warning}
+        return {"results": [_company_summary(c) for c in results], "warning": warning,
+                "warning_code": "gleif_unreachable" if warning else None}
+
+    @route("GET", r"/api/diagnostics")
+    def sources_check(h, m):
+        return {"sources": diagnostics.check_sources(app.context())}
 
     @route("GET", r"/api/meta")
     def meta(h, m):
@@ -83,11 +90,50 @@ def make_handler(app):
         docs = app.db.company_documents(lei)
         found = {d["fiscal_year"] for d in docs if d["fiscal_year"]}
         window = final_window(found, app.settings.years, date.today())
-        return {"company": {**record, "nace_label": nace_label(record.get("nace"))},
+        return {"company": {**record, "nace_label": nace_label(record.get("nace")),
+                            "nace_label_en": nace_label(record.get("nace"), "en"),
+                            "country_name": COUNTRY_NAMES.get(record.get("country") or "", record.get("country"))},
                 "coverage": compute_coverage(docs, window),
                 "documents": [_doc(d) for d in docs],
+                "stats": {"documents": len(docs), "bytes": sum(d["size"] or 0 for d in docs),
+                          "last_update": max((d["created_at"] for d in docs), default=None)},
+                "notes": app.db.notes(lei),
                 "jobs": app.db.query("SELECT id, kind, status, progress, created_at FROM jobs "
                                      "WHERE params LIKE ? ORDER BY id DESC LIMIT 5", (f'%"{lei}"%',))}
+
+    @route("GET", r"/api/companies/(?P<lei>[A-Z0-9]{20})/notes")
+    def company_notes(h, m):
+        return app.db.notes(m["lei"])
+
+    @route("PUT", r"/api/companies/(?P<lei>[A-Z0-9]{20})/notes")
+    def company_notes_save(h, m):
+        text = str(h.json_body().get("text") or "")
+        if len(text) > 100_000:
+            raise ApiError(413, "Notiz zu lang")
+        if not app.db.company(m["lei"]):
+            raise ApiError(404, "Unternehmen unbekannt")
+        return app.db.save_notes(m["lei"], text)
+
+    @route("GET", r"/api/companies/(?P<lei>[A-Z0-9]{20})/financials\.xlsx")
+    def company_financials_xlsx(h, m):
+        record = app.db.company(m["lei"]) or {"name": m["lei"]}
+        h.send_bytes(financials.workbook_company(app.db, m["lei"], CATEGORY_LABELS), XLSX,
+                     f"kennzahlen_{record['name']}.xlsx")
+
+    @route("GET", r"/api/compare")
+    def compare(h, m):
+        return {"companies": financials.companies_series(app.db, _leis(h)), **financials.snapshot(app.db, _leis(h))}
+
+    @route("GET", r"/api/compare/candidates")
+    def compare_candidates(h, m):
+        return {"companies": [{**c, "in_library": bool(c["in_library"])} for c in app.db.companies_with_figures()]}
+
+    @route("GET", r"/api/compare/export\.xlsx")
+    def compare_xlsx(h, m):
+        leis = _leis(h)
+        if not leis:
+            raise ApiError(400, "Bitte Unternehmen wählen")
+        h.send_bytes(financials.workbook_compare(app.db, leis), XLSX, "unternehmensvergleich.xlsx")
 
     @route("POST", r"/api/companies")
     def company_add(h, m):
@@ -158,8 +204,17 @@ def make_handler(app):
 
     @route("GET", r"/api/library")
     def library(h, m):
-        return {"companies": [_company_summary(c) | {"documents": c["documents"], "years": c["years"]}
-                              for c in app.db.library_companies()],
+        companies = []
+        with_figures = {r["lei"] for r in app.db.query("SELECT DISTINCT lei FROM financials")}
+        for c in app.db.library_companies():
+            docs = app.db.company_documents(c["lei"])
+            found = {d["fiscal_year"] for d in docs if d["fiscal_year"]}
+            cov = compute_coverage(docs, final_window(found, app.settings.years, date.today()))
+            companies.append(_company_summary(c) | {
+                "documents": c["documents"], "years": c["years"], "covered": cov["covered"], "target": cov["target"],
+                "bytes": sum(d["size"] or 0 for d in docs), "has_financials": c["lei"] in with_figures,
+                "last_update": max((d["created_at"] for d in docs), default=None)})
+        return {"companies": companies,
                 "industries": [{**i, "label": nace_label(i["nace"])} for i in app.db.library_industries()],
                 "watchlist": [_company_summary(c) for c in app.db.query("SELECT * FROM companies WHERE watch = 1")]}
 
@@ -244,9 +299,12 @@ def make_handler(app):
                        "COUNT(DISTINCT CASE WHEN scope = 'company' THEN lei END) AS companies, "
                        "COUNT(DISTINCT CASE WHEN scope = 'industry' THEN nace END) AS industries FROM documents")
         stats["indexed"] = db.one("SELECT COUNT(*) AS n FROM doc_index WHERE status = 'ok'")["n"]
-        stats["with_financials"] = db.one("SELECT COUNT(DISTINCT lei) AS n FROM financials")["n"]
-        recent = db.query("SELECT d.id, d.lei, d.nace, d.category, d.fiscal_year, d.fy_label, d.title, d.size, "
-                          "d.created_at, c.name AS company FROM documents d LEFT JOIN companies c ON c.lei = d.lei "
+        # Only companies in the library; peers from industry packages have figures too but are not "yours".
+        stats["with_financials"] = db.one(
+            "SELECT COUNT(DISTINCT f.lei) AS n FROM financials f WHERE EXISTS "
+            "(SELECT 1 FROM documents d WHERE d.lei = f.lei AND d.scope = 'company')")["n"]
+        recent = db.query("SELECT d.id, d.lei, d.nace, d.scope, d.category, d.fiscal_year, d.fy_label, d.title, d.size, "
+                          "d.mime, d.created_at, c.name AS company FROM documents d LEFT JOIN companies c ON c.lei = d.lei "
                           "ORDER BY d.id DESC LIMIT 8")
         for r in recent:
             r["category_label"] = CATEGORY_LABELS.get(r["category"], r["category"])
@@ -272,7 +330,9 @@ def make_handler(app):
                 "watchlist": watch,
                 "auto_refresh": {"days": app.settings.auto_refresh_days,
                                  "next": datetime.fromtimestamp(nxt, timezone.utc).isoformat() if nxt else None},
-                "pdftotext": fulltext.pdftotext_available()}
+                "pdftotext": fulltext.pdftotext_available(),
+                "setup": {"contact_email": bool(app.settings.contact_email),
+                          "search": bool(app.settings.search_provider), "pdftotext": fulltext.pdftotext_available()}}
 
     @route("GET", r"/api/jobs")
     def jobs(h, m):
@@ -465,6 +525,15 @@ def make_handler(app):
             self.end_headers()
             self.wfile.write(body)
 
+        def send_bytes(self, body: bytes, ctype: str, filename: str) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
+            self._headers()
+            self.end_headers()
+            self.wfile.write(body)
+
         def send_file(self, path, ctype: str, *, attachment: bool = False, sandbox: bool = False) -> None:
             size = path.stat().st_size
             disposition = "attachment" if attachment else "inline"
@@ -516,6 +585,12 @@ def make_handler(app):
             self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode("utf-8"))
 
     return Handler
+
+
+def _leis(h) -> list[str]:
+    raw = (h.query.get("leis") or [""])[0]
+    leis = [x for x in dict.fromkeys(raw.upper().split(",")) if LEI_PATTERN.match(x)]
+    return leis[:8]
 
 
 def _company_summary(c: dict) -> dict:

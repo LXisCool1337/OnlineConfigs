@@ -314,6 +314,11 @@ def comparison(db, nace: str, focus_lei: str | None = None) -> dict:
                                        "AND category LIKE 'peer_report%' AND lei IS NOT NULL", (nace,))]
     if focus_lei and focus_lei not in leis:
         leis.insert(0, focus_lei)
+    return {"nace": nace, **snapshot(db, leis, focus_lei)}
+
+
+def snapshot(db, leis: list[str], focus_lei: str | None = None) -> dict:
+    """Latest fiscal year per company with the comparable ratios, plus the median of each ratio."""
     rows = []
     for lei in leis:
         latest = db.one("SELECT MAX(fiscal_year) AS y FROM financials WHERE lei = ? AND metric = 'revenue'", (lei,))
@@ -334,5 +339,89 @@ def comparison(db, nace: str, focus_lei: str | None = None) -> dict:
         if values:
             mid = len(values) // 2
             median[key] = values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
-    return {"nace": nace, "rows": rows, "median": median,
+    return {"rows": rows, "median": median,
             "metrics": [{"key": k, "label": LABELS[k], "unit": UNITS[k]} for k in COMPARE_KEYS]}
+
+
+def companies_series(db, leis: list[str]) -> list[dict]:
+    """Full yearly metrics of several companies (for the comparison page)."""
+    out = []
+    for lei in leis:
+        company = db.company(lei) or {"name": lei}
+        out.append({**table_for(db, lei), "name": company.get("name"), "country": company.get("country")})
+    return out
+
+
+# --- Excel exports ---------------------------------------------------------------------------
+
+UNIT_STYLE = {"money": "num1", "pct": "pct", "per_share": "num2"}
+
+
+def _unit_label(unit: str, currency: str) -> str:
+    return {"money": f"Mio. {currency}".strip(), "pct": "%", "per_share": f"{currency} je Aktie".strip()}[unit]
+
+
+def _xlsx_value(value, unit: str):
+    if value is None:
+        return None
+    return (value / 1e6 if unit == "money" else value, UNIT_STYLE[unit])
+
+
+def workbook_company(db, lei: str, category_labels: dict) -> bytes:
+    from .xlsx import Sheet, workbook
+
+    company = db.company(lei) or {"name": lei}
+    data = table_for(db, lei)
+    cur = data["currency"]
+    years = data["years"]
+    figures = [["Kennzahl", "Einheit"] + [str(y) for y in years]]
+    for m in data["metrics"]:
+        figures.append([m["label"], _unit_label(m["unit"], cur)]
+                       + [_xlsx_value(m["values"].get(str(y)), m["unit"]) for y in years])
+    docs = [["Geschäftsjahr", "Dokument", "Sprache", "Quelle", "Titel", "Datei", "Größe (KB)", "Quell-URL", "SHA-256",
+             "Abgerufen"]]
+    for d in db.company_documents(lei):
+        docs.append([d["fy_label"] or d["fiscal_year"], category_labels.get(d["category"], d["category"]),
+                     (d["language"] or "").upper(), d["source"], d["title"], d["path"],
+                     (round((d["size"] or 0) / 1024), "int"), d["source_url"], d["sha256"], d["created_at"]])
+    info = [["Feld", "Wert"], ["Unternehmen", company.get("name")], ["LEI", lei],
+            ["ISIN", ", ".join(company.get("isins") or [])], ["Land", company.get("country")],
+            ["Kennzahlen", "aus dem Inline-XBRL der ESEF-Jahresfinanzberichte, ursprünglich berichtete Werte"],
+            ["Beträge", f"in Mio. {cur}; Prozentwerte als Anteil"], ["Erstellt mit", "EU-Report-Portal"]]
+    for note in data["restatements"]:
+        info.append([f"Anpassung {note['year']}", f"{note['label']}: berichtet {note['reported'] / 1e6:.1f}, "
+                                                  f"im Folgejahr {note['restated'] / 1e6:.1f} Mio."])
+    return workbook([Sheet("Kennzahlen", figures, [30, 14] + [12] * len(years)),
+                     Sheet("Dokumente", docs, [12, 26, 8, 10, 40, 60, 10, 60, 20, 22]),
+                     Sheet("Info", info, [22, 80])])
+
+
+COMPARE_SHEETS = ["revenue", "revenue_growth", "ebit_margin", "net_margin", "eps", "fcf", "fcf_margin",
+                  "equity_ratio", "roe"]
+
+
+def workbook_compare(db, leis: list[str]) -> bytes:
+    from .xlsx import Sheet, workbook
+
+    series = companies_series(db, leis)
+    snap = snapshot(db, leis)
+    head = ["Unternehmen", "Land", "Geschäftsjahr", "Währung"] + [m["label"] for m in snap["metrics"]]
+    overview = [head]
+    for r in snap["rows"]:
+        overview.append([r["name"], r["country"], r["fiscal_year"], r["currency"]]
+                        + [_xlsx_value(r.get(m["key"]), m["unit"]) for m in snap["metrics"]])
+    overview.append(["Median", None, None, None] + [_xlsx_value(snap["median"].get(m["key"]), m["unit"])
+                                                     if m["key"] in snap["median"] else None for m in snap["metrics"]])
+    sheets = [Sheet("Übersicht", overview, [32, 8, 14, 10] + [16] * len(snap["metrics"]))]
+    years = sorted({y for s in series for y in s["years"]})
+    for key in COMPARE_SHEETS:
+        rows = [["Unternehmen", "Einheit"] + [str(y) for y in years]]
+        for s in series:
+            metric = next((m for m in s["metrics"] if m["key"] == key), None)
+            if metric is None:
+                continue
+            rows.append([s["name"], _unit_label(metric["unit"], s["currency"])]
+                        + [_xlsx_value(metric["values"].get(str(y)), metric["unit"]) for y in years])
+        if len(rows) > 1:
+            sheets.append(Sheet(LABELS[key], rows, [32, 14] + [12] * len(years)))
+    return workbook(sheets)

@@ -43,8 +43,8 @@ class Curated:
     def sources(self, nace: str) -> list[dict]:
         division = nace_division(nace)
         builtin = load_sources(self.ctx.settings.industry_sources_file)
-        out = [dict(s, origin="Startliste") for s in builtin.get(division, []) + builtin.get("*", [])]
-        out += [{"name": s["name"] or s["url"], "url": s["url"], "origin": "eigene Quelle"}
+        out = [dict(s, origin="Startliste", own=False) for s in builtin.get(division, []) + builtin.get("*", [])]
+        out += [{"name": s["name"] or s["url"], "url": s["url"], "origin": "eigene Quelle", "own": True}
                 for s in self.ctx.db.industry_sources(division)]
         seen, unique = set(), []
         for source in out:

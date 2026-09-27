@@ -110,6 +110,22 @@ class KronesTests(unittest.TestCase):
         self.assertTrue(krones_row["focus"])
         self.assertAlmostEqual(krones_row["net_margin"], 299.2 / 5663.8, places=6)
 
+    def test_05b_progress_steps_for_the_checklist(self):
+        """The nested industry run reports sub-steps, so the company checklist keeps its order."""
+        events = self.app.db.job_events(self.job["id"])
+        stages = [json.loads(e["data"]) if isinstance(e["data"], str) else e["data"] for e in events if e["level"] == "stage"]
+        steps = [d["step"] for d in stages if d.get("step")]
+        order = ["resolve", "enrich", "esef", "irsite", "websearch", "select", "download", "analyze", "industry"]
+        self.assertEqual(list(dict.fromkeys(steps)), order)
+        self.assertEqual(steps[steps.index("industry"):], ["industry"] * len(steps[steps.index("industry"):]))
+        subs = [d["substep"] for d in stages if d.get("substep")]
+        self.assertIn("industry.peers", subs)
+        self.assertTrue(all(s.startswith("industry.") for s in subs))
+        for e in events:
+            data = json.loads(e["data"]) if isinstance(e["data"], str) else e["data"]
+            if data and data.get("skipped") and data.get("step"):
+                self.assertIn(data["step"], order)
+
     def test_06_wrong_document_is_replaced(self):
         wrong = next(d for d in self.docs() if d["fiscal_year"] == 2025 and d["category"] == "annual_report")
         self.app.library.absolute(wrong["path"]).unlink()

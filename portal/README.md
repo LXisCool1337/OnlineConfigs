@@ -10,22 +10,23 @@ Das Portal nutzt nur die Python-Standardbibliothek (ab 3.11). Es gibt nichts zu 
 python3 -m portal serve --open
 ```
 
-Das öffnet http://localhost:8765. Beim ersten Start unter **Einstellungen** eine Kontakt-E-Mail eintragen: Sie wird im User-Agent an die Datenquellen gesendet, und Wikidata und OpenAlex erwarten das.
+Das öffnet http://localhost:8765. Die Startseite erklärt den Ablauf in drei Schritten und zeigt eine Einrichtungs-Checkliste: Kontakt-E-Mail eintragen (sie geht im User-Agent an die Datenquellen; Wikidata und OpenAlex erwarten das), optional Websuche und `pdftotext`. **Datenquellen prüfen** zeigt sofort, ob dein Netzwerk alle Quellen erreicht.
 
-1. **Unternehmen** suchen: Name, ISIN (z. B. `DE0006335003`) oder LEI.
-2. Optional die IR-Seite bzw. das Berichtsarchiv und die Branche (NACE) eintragen.
-3. **Berichte laden**. Das Live-Protokoll zeigt jeden Schritt; danach folgen die Abdeckungsmatrix (Jahr × PDF/ESEF), die Dokumentliste und der ZIP-Export.
+1. Unternehmen suchen: Name, ISIN (z. B. `DE0006335003`) oder LEI.
+2. Auf der Unternehmensseite **Jahresberichte laden** klicken. Alles Weitere (Jahre, Sprache, Quellen, eigene Links) steht unter „Weitere Optionen“.
+3. Der Fortschritt erscheint als Checkliste; danach folgen Kennzahl-Kacheln, die Jahresübersicht (PDF und ESEF je Jahr, mit Vorschau), Diagramme, Excel-Export und Notizen.
 
-Die Reiter:
-
-| Reiter | Inhalt |
+| Seite | Inhalt |
 |---|---|
-| **Übersicht** | Bestand, Speicher, zuletzt geladene Dokumente, Unternehmen mit Lücken, laufende Aufträge, Beobachtungsliste |
-| **Unternehmen** | Abruf, Abdeckung (fehlende Jahre per Klick ergänzen), **Kennzahlen aus den ESEF-Berichten** mit Diagrammen und Excel-Export, Dokumentliste („Falsch“ ersetzt ein Dokument beim nächsten Lauf durch die nächstbeste Quelle) |
-| **Branchen** | Branchenpaket, eigene Quellen, **Wettbewerbervergleich** (Margen, Wachstum, Eigenkapitalquote, ROE, Median) |
-| **Volltext** | Suche in allen Berichten: Wörter, „Phrasen“, Wortanfang* (Zoll* findet Zölle, Zollpolitik), Filter nach Unternehmen und Jahren |
-| **Aufträge**, **Bibliothek**, **Universum** | Auftragsprotokolle, Bestand, Katalog aller EU-Aktien und Stapelabruf |
-| **Einstellungen** | Kontakt-E-Mail, Sprachen, Websuche und automatische Aktualisierung der Beobachtungsliste (alle N Tage) |
+| **Start** | Suche, „So funktioniert's“, Einrichtung, zuletzt geladen, Lücken, Beobachtungsliste, laufende Aufträge |
+| **Unternehmen** | Steckbrief, ein Knopf zum Laden, Checkliste mit Ergebnis, Kennzahl-Kacheln, Jahresübersicht (Vorschau, Download, ✕ für falsche Dateien, „+ Link“ für Lücken), Diagramme, Excel/CSV, „Mit Wettbewerbern vergleichen“, Notizen, Drucken, ZIP |
+| **Vergleichen** | bis zu vier Unternehmen als Linien (absolut oder indexiert), Momentaufnahme mit Median, Excel-Export; die Auswahl steht im Link |
+| **Branchen** | Branchenpaket zusammenstellen, Ergebnisse nach Art, Wettbewerbervergleich, eigene Verbandsquellen |
+| **Suche in Berichten** | Volltext: Wörter, „Phrasen“, Wortanfang\* (Zoll\* findet Zölle), OR; Filter nach Unternehmen und Jahren; Vorschau an der Fundstelle |
+| **Bibliothek**, **Aufträge**, **Alle EU-Aktien** | Bestand mit Abdeckung, alle Hintergrundaufträge, Katalog aller EU-Aktien und Stapelabruf |
+| **Einstellungen** | Sprache und Farbschema, Abruf, Websuche, Branchenpaket, automatische Aktualisierung, Datenquellen prüfen |
+
+Oben rechts: **Hilfe** (Anleitung, Glossar, häufige Fragen – jedes „?“ im Portal öffnet den passenden Begriff), **DE/EN** und das Farbschema (System, hell, dunkel). Die Taste `/` springt ins Suchfeld.
 
 ## Kommandozeile
 
@@ -39,7 +40,7 @@ python3 -m portal universe --source firds      # vollständig: ESMA-Referenzdate
 python3 -m portal batch --country DE,AT --esef-only --limit 50
 python3 -m portal refresh                      # Beobachtungsliste aktualisieren (cron)
 python3 -m portal export <LEI>
-python3 -m portal figures DE0006335003         # Kennzahlen-Tabelle (--csv de: Excel-CSV)
+python3 -m portal figures DE0006335003         # Kennzahlen-Tabelle (--csv de: Excel-CSV; .xlsx gibt es in der Oberfläche)
 python3 -m portal grep "Zoll*" --limit 10      # Volltextsuche über alle Berichte
 python3 -m portal index                        # Volltext nachindizieren, Kennzahlen neu berechnen
 ```
@@ -73,7 +74,9 @@ Soll das Portal auf einer anderen Adresse als `127.0.0.1` laufen, muss `access_t
 python3 -m unittest discover -s tests -t .
 ```
 
-Die Tests laufen komplett offline gegen ein nachgebautes Internet ([`tests/fakeweb.py`](../tests/fakeweb.py)). Ein eigener Testfall spielt jede Funktion mit Krones AG und den Krones-Zahlen aus `data/` durch: `python3 -m unittest tests.test_krones -v`.
+Die Tests laufen komplett offline gegen ein nachgebautes Internet ([`tests/fakeweb.py`](../tests/fakeweb.py)). Ein eigener Testfall spielt jede Funktion mit Krones AG und den Krones-Zahlen aus `data/` durch: `python3 -m unittest tests.test_krones -v`. `tests/test_ui_i18n.py` prüft, dass jeder Text der Oberfläche auf Deutsch und Englisch vorhanden ist.
+
+Neue Texte der Oberfläche kommen in [`static/i18n/de.json`](static/i18n/de.json) und [`static/i18n/en.json`](static/i18n/en.json) (gleiche Schlüssel, gleiche Platzhalter wie `{n}`).
 
 ## Grenzen
 

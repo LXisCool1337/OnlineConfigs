@@ -47,6 +47,7 @@ class Context:
         self.cancel_event = cancel_event or threading.Event()
         self._range = (0.0, 1.0)
         self._last_progress = -1.0
+        self._parent: tuple[str, str] | None = None
 
     def log(self, level: str, message: str, **data) -> None:
         if self.job_id is not None:
@@ -86,7 +87,29 @@ class Context:
         if fields:
             self.db.update_job(self.job_id, **fields)
 
-    def stage(self, fraction: float, label: str) -> None:
+    @contextmanager
+    def within(self, step: str, kind: str):
+        """Run a nested pipeline (the industry package inside a company job): its steps are reported
+        as sub-steps of ``step``, so they do not collide with the outer job's own step keys."""
+        previous = self._parent
+        self._parent = (step, kind)
+        try:
+            yield
+        finally:
+            self._parent = previous
+
+    def stage(self, fraction: float, label: str, step: str | None = None) -> None:
+        """Start a pipeline step; ``step`` is a stable key the UI turns into a translated checklist."""
         self.check_cancel()
         self.progress(fraction, label)
-        self.log("stage", label)
+        if step and self._parent:
+            self.log("stage", label, step=self._parent[0], substep=f"{self._parent[1]}.{step}")
+        else:
+            self.log("stage", label, **({"step": step} if step else {}))
+
+    def skip(self, step: str, reason: str, message: str) -> None:
+        """Record that a step did not run and why (shown in the UI checklist)."""
+        if self._parent:
+            self.log("info", message, substep=f"{self._parent[1]}.{step}", skipped=reason)
+        else:
+            self.log("info", message, step=step, skipped=reason)
