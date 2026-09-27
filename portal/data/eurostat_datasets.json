@@ -1,0 +1,68 @@
+[
+ {
+  "code": "sts_inpr_a",
+  "label_de": "Produktion im Produzierenden Gewerbe (Index, jährlich)",
+  "sections": [
+   "B",
+   "C",
+   "D"
+  ],
+  "nace_dim": "nace_r2"
+ },
+ {
+  "code": "sts_inppd_a",
+  "label_de": "Erzeugerpreise, Inlandsmarkt (jährlich)",
+  "sections": [
+   "B",
+   "C",
+   "D",
+   "E"
+  ],
+  "nace_dim": "nace_r2"
+ },
+ {
+  "code": "sbs_ovw_act",
+  "label_de": "Unternehmensstatistik nach Wirtschaftszweig (ab 2021)",
+  "sections": [
+   "B",
+   "C",
+   "D",
+   "E",
+   "F",
+   "G",
+   "H",
+   "I",
+   "J",
+   "L",
+   "M",
+   "N",
+   "S"
+  ],
+  "nace_dim": "nace_r2"
+ },
+ {
+  "code": "sbs_na_ind_r2",
+  "label_de": "Unternehmensstatistik Industrie (bis 2020)",
+  "sections": [
+   "B",
+   "C",
+   "D",
+   "E"
+  ],
+  "nace_dim": "nace_r2"
+ },
+ {
+  "code": "sbs_na_1a_se_r2",
+  "label_de": "Unternehmensstatistik Dienstleistungen (bis 2020)",
+  "sections": [
+   "H",
+   "I",
+   "J",
+   "L",
+   "M",
+   "N",
+   "S"
+  ],
+  "nace_dim": "nace_r2"
+ }
+]

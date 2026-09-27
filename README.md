@@ -633,3 +633,5 @@ Krones is not a Buffett "wonderful business at a fair price". Its moat is too na
 ---
 
 <sub>Repository contents: this report (`README.md`), the charts (`charts/*.svg`, rebuilt with `python3 charts/build_charts.py`, no dependencies) and the underlying data (`data/krones_financials_2015_2025.csv`). Charts use a colour-blind-validated palette with separate light and dark versions. Research only, not investment advice; figures may contain errors, so verify against Krones' original filings before acting.</sub>
+
+<sub>**Report portal:** [`portal/`](portal/README.md) downloads ten years of annual reports plus an industry package for any EU/EEA-listed company (`python3 -m portal serve`). How it works: [`docs/PLAN.md`](docs/PLAN.md).</sub>

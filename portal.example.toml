@@ -1,0 +1,40 @@
+# EU-Report-Portal: copy to portal.toml (ignored by git) and adjust.
+# Every key can also be set as an environment variable PORTAL_<KEY>, e.g. PORTAL_CONTACT_EMAIL.
+
+# Sent in the User-Agent so data providers can reach you (Wikidata and OpenAlex ask for it).
+contact_email = ""
+
+# Where documents and the catalogue database are stored.
+# library_dir = "/data/eu-reports"
+
+# Web server. For anything other than 127.0.0.1 an access token is required.
+host = "127.0.0.1"
+port = 8765
+# access_token = "a-long-random-string"
+
+# What a company job fetches.
+years = 10
+languages = ["en", "local"]        # "local" = the company's reporting language
+all_languages = false              # true: one PDF per preferred language and year
+include_sustainability = false
+esef_formats = ["report", "package"]   # also possible: "json" (xBRL-JSON)
+
+# Politeness: seconds between two requests to the same host.
+default_rate = 1.0
+# host_rates = { "filings.xbrl.org" = 1.0, "query.wikidata.org" = 2.0 }
+crawl_max_pages = 120
+max_file_mb = 300
+
+# Optional web search to fill gaps: "brave" (API key) or "searxng" (own instance with JSON output).
+search_provider = ""
+brave_api_key = ""
+searxng_url = ""
+
+# Industry package.
+peers_max = 12
+peer_years = 1
+openalex_max = 15
+curated_max_per_source = 10
+
+# Universe of "all EU stocks": empty = EU-27 + EEA. Add "GB" or "CH" to include them.
+universe_countries = []

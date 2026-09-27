@@ -1,0 +1,530 @@
+[
+ {
+  "code": "01",
+  "section": "A",
+  "de": "Landwirtschaft, Jagd und damit verbundene Tätigkeiten",
+  "en": "Crop and animal production, hunting and related service activities"
+ },
+ {
+  "code": "02",
+  "section": "A",
+  "de": "Forstwirtschaft und Holzeinschlag",
+  "en": "Forestry and logging"
+ },
+ {
+  "code": "03",
+  "section": "A",
+  "de": "Fischerei und Aquakultur",
+  "en": "Fishing and aquaculture"
+ },
+ {
+  "code": "05",
+  "section": "B",
+  "de": "Kohlenbergbau",
+  "en": "Mining of coal and lignite"
+ },
+ {
+  "code": "06",
+  "section": "B",
+  "de": "Gewinnung von Erdöl und Erdgas",
+  "en": "Extraction of crude petroleum and natural gas"
+ },
+ {
+  "code": "07",
+  "section": "B",
+  "de": "Erzbergbau",
+  "en": "Mining of metal ores"
+ },
+ {
+  "code": "08",
+  "section": "B",
+  "de": "Gewinnung von Steinen und Erden, sonstiger Bergbau",
+  "en": "Other mining and quarrying"
+ },
+ {
+  "code": "09",
+  "section": "B",
+  "de": "Dienstleistungen für den Bergbau",
+  "en": "Mining support service activities"
+ },
+ {
+  "code": "10",
+  "section": "C",
+  "de": "Herstellung von Nahrungs- und Futtermitteln",
+  "en": "Manufacture of food products"
+ },
+ {
+  "code": "11",
+  "section": "C",
+  "de": "Getränkeherstellung",
+  "en": "Manufacture of beverages"
+ },
+ {
+  "code": "12",
+  "section": "C",
+  "de": "Tabakverarbeitung",
+  "en": "Manufacture of tobacco products"
+ },
+ {
+  "code": "13",
+  "section": "C",
+  "de": "Herstellung von Textilien",
+  "en": "Manufacture of textiles"
+ },
+ {
+  "code": "14",
+  "section": "C",
+  "de": "Herstellung von Bekleidung",
+  "en": "Manufacture of wearing apparel"
+ },
+ {
+  "code": "15",
+  "section": "C",
+  "de": "Herstellung von Leder, Lederwaren und Schuhen",
+  "en": "Manufacture of leather and related products"
+ },
+ {
+  "code": "16",
+  "section": "C",
+  "de": "Herstellung von Holz-, Flecht-, Korb- und Korkwaren (ohne Möbel)",
+  "en": "Manufacture of wood and of products of wood and cork, except furniture"
+ },
+ {
+  "code": "17",
+  "section": "C",
+  "de": "Herstellung von Papier, Pappe und Waren daraus",
+  "en": "Manufacture of paper and paper products"
+ },
+ {
+  "code": "18",
+  "section": "C",
+  "de": "Herstellung von Druckerzeugnissen; Vervielfältigung von Ton-, Bild- und Datenträgern",
+  "en": "Printing and reproduction of recorded media"
+ },
+ {
+  "code": "19",
+  "section": "C",
+  "de": "Kokerei und Mineralölverarbeitung",
+  "en": "Manufacture of coke and refined petroleum products"
+ },
+ {
+  "code": "20",
+  "section": "C",
+  "de": "Herstellung von chemischen Erzeugnissen",
+  "en": "Manufacture of chemicals and chemical products"
+ },
+ {
+  "code": "21",
+  "section": "C",
+  "de": "Herstellung von pharmazeutischen Erzeugnissen",
+  "en": "Manufacture of basic pharmaceutical products and pharmaceutical preparations"
+ },
+ {
+  "code": "22",
+  "section": "C",
+  "de": "Herstellung von Gummi- und Kunststoffwaren",
+  "en": "Manufacture of rubber and plastic products"
+ },
+ {
+  "code": "23",
+  "section": "C",
+  "de": "Herstellung von Glas und Glaswaren, Keramik, Verarbeitung von Steinen und Erden",
+  "en": "Manufacture of other non-metallic mineral products"
+ },
+ {
+  "code": "24",
+  "section": "C",
+  "de": "Metallerzeugung und -bearbeitung",
+  "en": "Manufacture of basic metals"
+ },
+ {
+  "code": "25",
+  "section": "C",
+  "de": "Herstellung von Metallerzeugnissen",
+  "en": "Manufacture of fabricated metal products, except machinery and equipment"
+ },
+ {
+  "code": "26",
+  "section": "C",
+  "de": "Herstellung von Datenverarbeitungsgeräten, elektronischen und optischen Erzeugnissen",
+  "en": "Manufacture of computer, electronic and optical products"
+ },
+ {
+  "code": "27",
+  "section": "C",
+  "de": "Herstellung von elektrischen Ausrüstungen",
+  "en": "Manufacture of electrical equipment"
+ },
+ {
+  "code": "28",
+  "section": "C",
+  "de": "Maschinenbau",
+  "en": "Manufacture of machinery and equipment n.e.c."
+ },
+ {
+  "code": "29",
+  "section": "C",
+  "de": "Herstellung von Kraftwagen und Kraftwagenteilen",
+  "en": "Manufacture of motor vehicles, trailers and semi-trailers"
+ },
+ {
+  "code": "30",
+  "section": "C",
+  "de": "Sonstiger Fahrzeugbau",
+  "en": "Manufacture of other transport equipment"
+ },
+ {
+  "code": "31",
+  "section": "C",
+  "de": "Herstellung von Möbeln",
+  "en": "Manufacture of furniture"
+ },
+ {
+  "code": "32",
+  "section": "C",
+  "de": "Herstellung von sonstigen Waren",
+  "en": "Other manufacturing"
+ },
+ {
+  "code": "33",
+  "section": "C",
+  "de": "Reparatur und Installation von Maschinen und Ausrüstungen",
+  "en": "Repair and installation of machinery and equipment"
+ },
+ {
+  "code": "35",
+  "section": "D",
+  "de": "Energieversorgung",
+  "en": "Electricity, gas, steam and air conditioning supply"
+ },
+ {
+  "code": "36",
+  "section": "E",
+  "de": "Wasserversorgung",
+  "en": "Water collection, treatment and supply"
+ },
+ {
+  "code": "37",
+  "section": "E",
+  "de": "Abwasserentsorgung",
+  "en": "Sewerage"
+ },
+ {
+  "code": "38",
+  "section": "E",
+  "de": "Sammlung, Behandlung und Beseitigung von Abfällen; Rückgewinnung",
+  "en": "Waste collection, treatment and disposal activities; materials recovery"
+ },
+ {
+  "code": "39",
+  "section": "E",
+  "de": "Beseitigung von Umweltverschmutzungen und sonstige Entsorgung",
+  "en": "Remediation activities and other waste management services"
+ },
+ {
+  "code": "41",
+  "section": "F",
+  "de": "Hochbau",
+  "en": "Construction of buildings"
+ },
+ {
+  "code": "42",
+  "section": "F",
+  "de": "Tiefbau",
+  "en": "Civil engineering"
+ },
+ {
+  "code": "43",
+  "section": "F",
+  "de": "Vorbereitende Baustellenarbeiten, Bauinstallation und sonstiges Ausbaugewerbe",
+  "en": "Specialised construction activities"
+ },
+ {
+  "code": "45",
+  "section": "G",
+  "de": "Handel mit Kraftfahrzeugen; Instandhaltung und Reparatur von Kraftfahrzeugen",
+  "en": "Wholesale and retail trade and repair of motor vehicles and motorcycles"
+ },
+ {
+  "code": "46",
+  "section": "G",
+  "de": "Großhandel (ohne Handel mit Kraftfahrzeugen)",
+  "en": "Wholesale trade, except of motor vehicles and motorcycles"
+ },
+ {
+  "code": "47",
+  "section": "G",
+  "de": "Einzelhandel (ohne Handel mit Kraftfahrzeugen)",
+  "en": "Retail trade, except of motor vehicles and motorcycles"
+ },
+ {
+  "code": "49",
+  "section": "H",
+  "de": "Landverkehr und Transport in Rohrfernleitungen",
+  "en": "Land transport and transport via pipelines"
+ },
+ {
+  "code": "50",
+  "section": "H",
+  "de": "Schifffahrt",
+  "en": "Water transport"
+ },
+ {
+  "code": "51",
+  "section": "H",
+  "de": "Luftfahrt",
+  "en": "Air transport"
+ },
+ {
+  "code": "52",
+  "section": "H",
+  "de": "Lagerei sowie Dienstleistungen für den Verkehr",
+  "en": "Warehousing and support activities for transportation"
+ },
+ {
+  "code": "53",
+  "section": "H",
+  "de": "Post-, Kurier- und Expressdienste",
+  "en": "Postal and courier activities"
+ },
+ {
+  "code": "55",
+  "section": "I",
+  "de": "Beherbergung",
+  "en": "Accommodation"
+ },
+ {
+  "code": "56",
+  "section": "I",
+  "de": "Gastronomie",
+  "en": "Food and beverage service activities"
+ },
+ {
+  "code": "58",
+  "section": "J",
+  "de": "Verlagswesen",
+  "en": "Publishing activities"
+ },
+ {
+  "code": "59",
+  "section": "J",
+  "de": "Film, Fernsehen, Kinos, Tonstudios und Musikverlage",
+  "en": "Motion picture, video and television programme production, sound recording and music publishing activities"
+ },
+ {
+  "code": "60",
+  "section": "J",
+  "de": "Rundfunkveranstalter",
+  "en": "Programming and broadcasting activities"
+ },
+ {
+  "code": "61",
+  "section": "J",
+  "de": "Telekommunikation",
+  "en": "Telecommunications"
+ },
+ {
+  "code": "62",
+  "section": "J",
+  "de": "Dienstleistungen der Informationstechnologie",
+  "en": "Computer programming, consultancy and related activities"
+ },
+ {
+  "code": "63",
+  "section": "J",
+  "de": "Informationsdienstleistungen",
+  "en": "Information service activities"
+ },
+ {
+  "code": "64",
+  "section": "K",
+  "de": "Finanzdienstleistungen",
+  "en": "Financial service activities, except insurance and pension funding"
+ },
+ {
+  "code": "65",
+  "section": "K",
+  "de": "Versicherungen, Rückversicherungen und Pensionskassen",
+  "en": "Insurance, reinsurance and pension funding, except compulsory social security"
+ },
+ {
+  "code": "66",
+  "section": "K",
+  "de": "Mit Finanz- und Versicherungsdienstleistungen verbundene Tätigkeiten",
+  "en": "Activities auxiliary to financial services and insurance activities"
+ },
+ {
+  "code": "68",
+  "section": "L",
+  "de": "Grundstücks- und Wohnungswesen",
+  "en": "Real estate activities"
+ },
+ {
+  "code": "69",
+  "section": "M",
+  "de": "Rechts- und Steuerberatung, Wirtschaftsprüfung",
+  "en": "Legal and accounting activities"
+ },
+ {
+  "code": "70",
+  "section": "M",
+  "de": "Verwaltung und Führung von Unternehmen; Unternehmensberatung",
+  "en": "Activities of head offices; management consultancy activities"
+ },
+ {
+  "code": "71",
+  "section": "M",
+  "de": "Architektur- und Ingenieurbüros; technische Untersuchung",
+  "en": "Architectural and engineering activities; technical testing and analysis"
+ },
+ {
+  "code": "72",
+  "section": "M",
+  "de": "Forschung und Entwicklung",
+  "en": "Scientific research and development"
+ },
+ {
+  "code": "73",
+  "section": "M",
+  "de": "Werbung und Marktforschung",
+  "en": "Advertising and market research"
+ },
+ {
+  "code": "74",
+  "section": "M",
+  "de": "Sonstige freiberufliche, wissenschaftliche und technische Tätigkeiten",
+  "en": "Other professional, scientific and technical activities"
+ },
+ {
+  "code": "75",
+  "section": "M",
+  "de": "Veterinärwesen",
+  "en": "Veterinary activities"
+ },
+ {
+  "code": "77",
+  "section": "N",
+  "de": "Vermietung von beweglichen Sachen",
+  "en": "Rental and leasing activities"
+ },
+ {
+  "code": "78",
+  "section": "N",
+  "de": "Vermittlung und Überlassung von Arbeitskräften",
+  "en": "Employment activities"
+ },
+ {
+  "code": "79",
+  "section": "N",
+  "de": "Reisebüros und Reiseveranstalter",
+  "en": "Travel agency, tour operator reservation service and related activities"
+ },
+ {
+  "code": "80",
+  "section": "N",
+  "de": "Wach- und Sicherheitsdienste sowie Detekteien",
+  "en": "Security and investigation activities"
+ },
+ {
+  "code": "81",
+  "section": "N",
+  "de": "Gebäudebetreuung; Garten- und Landschaftsbau",
+  "en": "Services to buildings and landscape activities"
+ },
+ {
+  "code": "82",
+  "section": "N",
+  "de": "Wirtschaftliche Dienstleistungen für Unternehmen und Privatpersonen a. n. g.",
+  "en": "Office administrative, office support and other business support activities"
+ },
+ {
+  "code": "84",
+  "section": "O",
+  "de": "Öffentliche Verwaltung, Verteidigung; Sozialversicherung",
+  "en": "Public administration and defence; compulsory social security"
+ },
+ {
+  "code": "85",
+  "section": "P",
+  "de": "Erziehung und Unterricht",
+  "en": "Education"
+ },
+ {
+  "code": "86",
+  "section": "Q",
+  "de": "Gesundheitswesen",
+  "en": "Human health activities"
+ },
+ {
+  "code": "87",
+  "section": "Q",
+  "de": "Heime (ohne Erholungs- und Ferienheime)",
+  "en": "Residential care activities"
+ },
+ {
+  "code": "88",
+  "section": "Q",
+  "de": "Sozialwesen (ohne Heime)",
+  "en": "Social work activities without accommodation"
+ },
+ {
+  "code": "90",
+  "section": "R",
+  "de": "Kreative, künstlerische und unterhaltende Tätigkeiten",
+  "en": "Creative, arts and entertainment activities"
+ },
+ {
+  "code": "91",
+  "section": "R",
+  "de": "Bibliotheken, Archive, Museen, botanische und zoologische Gärten",
+  "en": "Libraries, archives, museums and other cultural activities"
+ },
+ {
+  "code": "92",
+  "section": "R",
+  "de": "Spiel-, Wett- und Lotteriewesen",
+  "en": "Gambling and betting activities"
+ },
+ {
+  "code": "93",
+  "section": "R",
+  "de": "Dienstleistungen des Sports, der Unterhaltung und der Erholung",
+  "en": "Sports activities and amusement and recreation activities"
+ },
+ {
+  "code": "94",
+  "section": "S",
+  "de": "Interessenvertretungen sowie kirchliche und sonstige religiöse Vereinigungen",
+  "en": "Activities of membership organisations"
+ },
+ {
+  "code": "95",
+  "section": "S",
+  "de": "Reparatur von Datenverarbeitungsgeräten und Gebrauchsgütern",
+  "en": "Repair of computers and personal and household goods"
+ },
+ {
+  "code": "96",
+  "section": "S",
+  "de": "Sonstige überwiegend persönliche Dienstleistungen",
+  "en": "Other personal service activities"
+ },
+ {
+  "code": "97",
+  "section": "T",
+  "de": "Private Haushalte mit Hauspersonal",
+  "en": "Activities of households as employers of domestic personnel"
+ },
+ {
+  "code": "98",
+  "section": "T",
+  "de": "Private Haushalte: Waren und Dienstleistungen für den Eigenbedarf",
+  "en": "Undifferentiated goods- and services-producing activities of private households for own use"
+ },
+ {
+  "code": "99",
+  "section": "U",
+  "de": "Exterritoriale Organisationen und Körperschaften",
+  "en": "Activities of extraterritorial organisations and bodies"
+ }
+]

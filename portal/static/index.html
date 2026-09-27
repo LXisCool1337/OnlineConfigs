@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EU-Report-Portal</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%232459c9%27/%3E%3Cpath d=%27M9 9h14M9 14h14M9 19h14M9 24h9%27 stroke=%27white%27 stroke-width=%272.4%27 stroke-linecap=%27round%27/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">▤</span>
+      <div>
+        <h1>EU-Report-Portal</h1>
+        <p class="sub">Geschäftsberichte der letzten 10 Jahre und Branchenreports für börsennotierte Unternehmen in EU und EWR</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Bereiche">
+      <button role="tab" data-tab="company" aria-selected="true">Unternehmen</button>
+      <button role="tab" data-tab="industry">Branchen</button>
+      <button role="tab" data-tab="jobs">Aufträge <span id="jobs-badge" class="badge" hidden></span></button>
+      <button role="tab" data-tab="library">Bibliothek</button>
+      <button role="tab" data-tab="universe">Universum</button>
+      <button role="tab" data-tab="settings">Einstellungen</button>
+    </nav>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <main>
+    <!-- Unternehmen -->
+    <section id="tab-company" class="tab" role="tabpanel">
+      <div class="card">
+        <label for="search" class="label">Unternehmen suchen</label>
+        <div class="searchrow">
+          <input id="search" type="search" placeholder="Name, ISIN oder LEI – z. B. Krones, DE0006335003" autocomplete="off">
+        </div>
+        <p id="search-warning" class="muted small" hidden></p>
+        <ul id="results" class="results" aria-live="polite"></ul>
+      </div>
+
+      <div id="company-panel" hidden>
+        <div class="card">
+          <div class="company-head">
+            <div>
+              <h2 id="c-name"></h2>
+              <p id="c-ids" class="muted small mono"></p>
+            </div>
+            <div class="actions">
+              <button id="c-watch" class="ghost" title="Zur Beobachtungsliste">☆ Beobachten</button>
+              <a id="c-export" class="button ghost" href="#">ZIP exportieren</a>
+            </div>
+          </div>
+          <div class="grid2">
+            <label>Website<input id="c-website" type="url" placeholder="https://…"></label>
+            <label>IR-Seite / Berichtsarchiv<input id="c-ir" type="url" placeholder="https://…/investor-relations/berichte"></label>
+            <label>Branche (NACE)<select id="c-nace"></select></label>
+            <label>Stichwörter für Branchenreports<input id="c-keywords" type="text" placeholder="z. B. Abfüllanlagen, Verpackungsmaschinen"></label>
+          </div>
+          <div class="row end"><button id="c-save" class="ghost">Stammdaten speichern</button></div>
+        </div>
+
+        <div class="card">
+          <h3>Abruf</h3>
+          <div class="grid3">
+            <label>Geschäftsjahre<input id="o-years" type="number" min="1" max="30" value="10"></label>
+            <label>Sprache
+              <select id="o-lang">
+                <option value="en,local">Englisch, sonst Landessprache</option>
+                <option value="local,en">Landessprache, sonst Englisch</option>
+                <option value="en">nur Englisch bevorzugen</option>
+                <option value="both">Englisch und Landessprache (beide)</option>
+              </select>
+            </label>
+            <label>Formate ESEF
+              <select id="o-esef">
+                <option value="report,package">Bericht (XHTML) + Paket (ZIP)</option>
+                <option value="report">nur Bericht (XHTML)</option>
+                <option value="report,package,json">Bericht + Paket + xBRL-JSON</option>
+              </select>
+            </label>
+          </div>
+          <div class="checks">
+            <label><input id="o-esef-on" type="checkbox" checked> ESEF-Jahresfinanzberichte (ab GJ 2020)</label>
+            <label><input id="o-pdf" type="checkbox" checked> PDF-Geschäftsberichte von der IR-Website</label>
+            <label><input id="o-web" type="checkbox" checked> Websuche für Lücken (falls eingerichtet)</label>
+            <label><input id="o-sust" type="checkbox"> Nachhaltigkeitsberichte</label>
+            <label><input id="o-industry" type="checkbox" checked> Branchenpaket inkl. Wettbewerber</label>
+          </div>
+          <details>
+            <summary>PDF-Links manuell ergänzen</summary>
+            <textarea id="o-urls" rows="3" placeholder="2017: https://…/geschaeftsbericht-2017.pdf&#10;https://…/annual-report-2016.pdf"></textarea>
+          </details>
+          <div class="row end"><button id="c-start" class="primary">Berichte laden</button></div>
+        </div>
+
+        <div id="c-job" class="card" hidden></div>
+
+        <div class="card">
+          <div class="row between">
+            <h3>Abdeckung</h3>
+            <span id="c-cov-text" class="muted small"></span>
+          </div>
+          <div class="scroll-x"><table id="c-coverage" class="coverage"></table></div>
+        </div>
+
+        <div class="card">
+          <h3>Dokumente</h3>
+          <div class="scroll-x"><table id="c-docs" class="docs"></table></div>
+          <p id="c-docs-empty" class="muted">Noch keine Dokumente. Starte einen Abruf.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Branchen -->
+    <section id="tab-industry" class="tab" role="tabpanel" hidden>
+      <div class="card">
+        <h3>Branchenpaket</h3>
+        <div class="grid2">
+          <label>Branche (NACE-Abteilung)<select id="i-nace"></select></label>
+          <label>oder genauer NACE-Code<input id="i-code" type="text" placeholder="z. B. 28.29"></label>
+          <label>Stichwörter<input id="i-keywords" type="text" placeholder="z. B. Getränkeabfüllung, Verpackung"></label>
+          <label>Land für Statistik<select id="i-country"><option value="">nur EU gesamt</option></select></label>
+        </div>
+        <label>Wettbewerber (Name, ISIN oder LEI, je Zeile; optional)<textarea id="i-peers" rows="2"></textarea></label>
+        <div class="checks">
+          <label><input id="i-stat" type="checkbox" checked> Amtliche Statistik (Eurostat)</label>
+          <label><input id="i-studies" type="checkbox" checked> Open-Access-Studien (OpenAlex)</label>
+          <label><input id="i-assoc" type="checkbox" checked> Verbände und Behörden</label>
+          <label><input id="i-peers-on" type="checkbox" checked> Wettbewerber-Berichte (ESEF)</label>
+          <label><input id="i-web" type="checkbox" checked> Websuche (falls eingerichtet)</label>
+        </div>
+        <div class="row end"><button id="i-start" class="primary">Branchenreports laden</button></div>
+      </div>
+      <div id="i-job" class="card" hidden></div>
+      <div class="card">
+        <div class="row between"><h3 id="i-title">Quellen</h3><a id="i-export" class="button ghost" href="#">ZIP exportieren</a></div>
+        <ul id="i-sources" class="sources"></ul>
+        <div class="row">
+          <input id="i-src-name" type="text" placeholder="Name der Quelle">
+          <input id="i-src-url" type="url" placeholder="https://verband.example/publikationen">
+          <button id="i-src-add" class="ghost">Quelle hinzufügen</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Branchendokumente</h3>
+        <div class="scroll-x"><table id="i-docs" class="docs"></table></div>
+        <p id="i-docs-empty" class="muted">Noch keine Dokumente für diese Branche.</p>
+      </div>
+    </section>
+
+    <!-- Aufträge -->
+    <section id="tab-jobs" class="tab" role="tabpanel" hidden>
+      <div class="card">
+        <div class="row between"><h3>Aufträge</h3><button id="j-refresh" class="ghost">Aktualisieren</button></div>
+        <div class="scroll-x"><table id="j-table" class="docs"></table></div>
+      </div>
+      <div id="j-detail" class="card" hidden></div>
+    </section>
+
+    <!-- Bibliothek -->
+    <section id="tab-library" class="tab" role="tabpanel" hidden>
+      <div class="card">
+        <h3>Unternehmen in der Bibliothek</h3>
+        <div class="scroll-x"><table id="l-companies" class="docs"></table></div>
+      </div>
+      <div class="card">
+        <h3>Branchenpakete</h3>
+        <div class="scroll-x"><table id="l-industries" class="docs"></table></div>
+      </div>
+      <div class="card">
+        <div class="row between"><h3>Beobachtungsliste</h3><button id="l-refresh" class="ghost">Alle aktualisieren</button></div>
+        <ul id="l-watch" class="results"></ul>
+      </div>
+    </section>
+
+    <!-- Universum -->
+    <section id="tab-universe" class="tab" role="tabpanel" hidden>
+      <div class="card">
+        <h3>Alle EU-Aktien</h3>
+        <p class="muted">Der lokale Katalog macht die Suche schnell und erlaubt Stapelabrufe. Quelle 1: alle ESEF-Emittenten (filings.xbrl.org, schnell). Quelle 2: ESMA FIRDS – jede an einem EU-Handelsplatz zugelassene Aktie (vollständig, mehrere hundert MB).</p>
+        <div id="u-stats" class="stats"></div>
+        <div class="row">
+          <button id="u-esef" class="ghost">ESEF-Emittenten laden</button>
+          <button id="u-firds" class="ghost">ESMA FIRDS laden</button>
+        </div>
+        <div class="scroll-x"><table id="u-countries" class="docs"></table></div>
+      </div>
+      <div class="card">
+        <h3>Stapelabruf</h3>
+        <p class="muted small">Reiht je Unternehmen einen Auftrag ein. Alle Anfragen bleiben gedrosselt; große Stapel laufen über Stunden.</p>
+        <div id="b-countries" class="countries"></div>
+        <div class="grid3">
+          <label>Höchstzahl Unternehmen<input id="b-limit" type="number" min="1" max="20000" value="25"></label>
+          <label>Geschäftsjahre<input id="b-years" type="number" min="1" max="30" value="10"></label>
+          <label class="inline"><input id="b-esef" type="checkbox" checked> nur Emittenten mit ESEF</label>
+        </div>
+        <div class="checks">
+          <label><input id="b-pdf" type="checkbox" checked> PDF von IR-Websites</label>
+          <label><input id="b-industry" type="checkbox"> Branchenpaket je Unternehmen</label>
+        </div>
+        <p id="b-estimate" class="muted small"></p>
+        <div class="row end"><button id="b-start" class="primary">Stapel starten</button></div>
+      </div>
+    </section>
+
+    <!-- Einstellungen -->
+    <section id="tab-settings" class="tab" role="tabpanel" hidden>
+      <div class="card">
+        <h3>Einstellungen</h3>
+        <div class="grid2">
+          <label>Kontakt-E-Mail (wird im User-Agent an Datenquellen gesendet)<input id="s-contact_email" type="email" placeholder="name@example.com"></label>
+          <label>Standard-Geschäftsjahre<input id="s-years" type="number" min="1" max="30"></label>
+          <label>Sprachen (Reihenfolge, „local“ = Landessprache)<input id="s-languages" type="text" placeholder="en, local"></label>
+          <label>ESEF-Formate<input id="s-esef_formats" type="text" placeholder="report, package"></label>
+          <label>Websuche
+            <select id="s-search_provider">
+              <option value="">aus</option>
+              <option value="brave">Brave Search API</option>
+              <option value="searxng">SearXNG (selbst gehostet)</option>
+            </select>
+          </label>
+          <label>Brave-API-Schlüssel<input id="s-brave_api_key" type="password" autocomplete="off"></label>
+          <label>SearXNG-URL<input id="s-searxng_url" type="url" placeholder="https://searx.example"></label>
+          <label>Sekunden zwischen Anfragen je Website<input id="s-default_rate" type="number" min="0.2" step="0.1"></label>
+          <label>Max. Wettbewerber<input id="s-peers_max" type="number" min="0" max="100"></label>
+          <label>Jahre je Wettbewerber<input id="s-peer_years" type="number" min="1" max="10"></label>
+          <label>Max. Open-Access-Studien<input id="s-openalex_max" type="number" min="0" max="100"></label>
+          <label>Max. PDFs je Verbandsquelle<input id="s-curated_max_per_source" type="number" min="0" max="100"></label>
+        </div>
+        <div class="checks">
+          <label><input id="s-all_languages" type="checkbox"> Pro Jahr alle bevorzugten Sprachen laden</label>
+          <label><input id="s-include_sustainability" type="checkbox"> Nachhaltigkeitsberichte standardmäßig laden</label>
+        </div>
+        <div class="row end"><button id="s-save" class="primary">Speichern</button></div>
+        <p class="muted small">robots.txt wird immer beachtet, jede Website wird gedrosselt abgefragt, und Bezahlschranken oder Logins werden nicht umgangen. Details: docs/PLAN.md.</p>
+      </div>
+    </section>
+  </main>
+  <footer class="foot muted small">Nur frei zugängliche Quellen · Dokumente bleiben lokal im Ordner <span class="mono">library/</span> · keine Anlageberatung</footer>
+</body>
+</html>
