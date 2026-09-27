@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import sqlite3
 import time
 from datetime import datetime, timezone
 import traceback
@@ -387,8 +388,13 @@ def make_handler(app):
             except (BrokenPipeError, ConnectionResetError):
                 pass
             except Exception as err:  # noqa: BLE001
+                if app.jobs.stopping:
+                    return
                 traceback.print_exc()
-                self.send_json({"error": f"Interner Fehler: {err}"}, 500)
+                try:
+                    self.send_json({"error": f"Interner Fehler: {err}"}, 500)
+                except OSError:
+                    pass
 
         def do_GET(self):
             self._dispatch("GET")
@@ -484,9 +490,14 @@ def make_handler(app):
             self.end_headers()
             self.close_connection = True
             last_beat = time.monotonic()
-            while True:
-                job = app.db.job(job_id)
-                events = app.db.job_events(job_id, after=after, limit=200)
+            while not app.jobs.stopping:
+                try:
+                    job = app.db.job(job_id)
+                    events = app.db.job_events(job_id, after=after, limit=200)
+                except sqlite3.ProgrammingError:
+                    return  # the portal is shutting down
+                if job is None:
+                    return
                 for event in events:
                     after = event["id"]
                     self._sse("log", event)

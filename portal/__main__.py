@@ -24,6 +24,11 @@ def echo(level: str, message: str, data: dict) -> None:
     print(f"{color}{prefix} {message}{reset}", flush=True)
 
 
+def _de(value: float, decimals: int) -> str:
+    """German number format: 5.663,8"""
+    return f"{value:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _include(args) -> dict:
     return {"esef": not args.no_esef, "pdf": not args.no_pdf, "websearch": not args.no_websearch,
             "sustainability": args.sustainability, "industry": args.industry}
@@ -61,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("industry", help="Branchenpaket laden")
     p.add_argument("nace")
+    p.add_argument("--company", help="Bezugsunternehmen (Name, ISIN, LEI) für Wettbewerber und Vergleich")
     p.add_argument("--keywords")
     p.add_argument("--country")
     p.add_argument("--peers")
@@ -151,11 +157,11 @@ def main(argv: list[str] | None = None) -> int:
                 if v is None:
                     cells.append(f"{'–':>11}")
                 elif m["unit"] == "pct":
-                    cells.append(f"{v * 100:>10.1f}%")
+                    cells.append(f"{_de(v * 100, 1) + ' %':>11}")
                 elif m["unit"] == "per_share":
-                    cells.append(f"{v:>11.2f}")
+                    cells.append(f"{_de(v, 2):>11}")
                 else:
-                    cells.append(f"{v / 1e6:>11,.1f}")
+                    cells.append(f"{_de(v / 1e6, 1):>11}")
             print(f"{m['label'][:27]:28}" + "".join(cells))
         return 0
 
@@ -180,6 +186,10 @@ def main(argv: list[str] | None = None) -> int:
         job = app.jobs.run_sync("company", params)
     elif args.command == "industry":
         params = {k: getattr(args, k) for k in ("nace", "keywords", "country", "peers", "years") if getattr(args, k)}
+        if args.company:
+            company = Resolver(app.context(echo=echo)).resolve(query=args.company)
+            params["company_lei"] = company["lei"]
+            params.setdefault("country", company.get("country"))
         job = app.jobs.run_sync("industry", params)
     elif args.command == "universe":
         job = app.jobs.run_sync("universe", {"source": args.source})

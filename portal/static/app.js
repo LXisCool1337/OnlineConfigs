@@ -660,14 +660,21 @@ function renderFinancials(data) {
   $("#c-fin-sub").textContent = "Geschäftsjahre " + data.years[0] + "–" + data.years[data.years.length - 1] +
     " · Beträge in Mio. " + cur + " · automatisch aus dem Inline-XBRL der ESEF-Berichte (inkl. Vorjahreswerte)";
   $("#c-fin-csv").href = withToken("/api/companies/" + data.lei + "/financials.csv?style=de");
-  const specs = [
-    ["revenue", "Umsatz", "Mio. " + cur],
-    ["ebit_margin", "EBIT-Marge", "in % vom Umsatz"],
-    ["fcf", "Free Cashflow", "Mio. " + cur + " · operativer Cashflow minus Investitionen"],
-    ["equity_ratio", "Eigenkapitalquote", "in % der Bilanzsumme"],
+  // Four slots; when a report does not tag the first choice, the slot falls back to the next metric.
+  const slots = [
+    [["revenue", "Umsatz", "Mio. " + cur]],
+    [["ebit_margin", "EBIT-Marge", "in % vom Umsatz"], ["net_margin", "Nettomarge", "Jahresergebnis in % vom Umsatz"]],
+    [["fcf", "Free Cashflow", "Mio. " + cur + " · operativer Cashflow minus Investitionen"], ["eps", "Ergebnis je Aktie", cur + " je Aktie"]],
+    [["equity_ratio", "Eigenkapitalquote", "in % der Bilanzsumme"], ["revenue_growth", "Umsatzwachstum", "in % zum Vorjahr"]],
   ];
-  const charts = specs.filter(([key]) => byKey[key]).map(([key, title, sub]) =>
-    columnChart({ title, sub, years: data.years, values: byKey[key].values, unit: byKey[key].unit, width: colWidth })).filter(Boolean);
+  const charts = slots.map((options) => {
+    for (const [key, title, sub] of options) {
+      if (!byKey[key]) continue;
+      const chart = columnChart({ title, sub, years: data.years, values: byKey[key].values, unit: byKey[key].unit, width: colWidth });
+      if (chart) return chart;
+    }
+    return null;
+  }).filter(Boolean);
   $("#c-charts").replaceChildren(...charts);
   const head = el("tr", {}, el("th", {}, "Kennzahl"), data.years.map((y) => el("th", {}, String(y))));
   const rows = data.metrics.map((m) => el("tr", {}, el("td", {}, m.label + (m.unit === "money" ? " (Mio. " + cur + ")" : m.unit === "per_share" ? " (" + cur + ")" : "")),

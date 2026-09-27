@@ -4,7 +4,7 @@
 
 Dieses Dokument beschreibt, wie das Portal funktioniert, warum es so gebaut ist und wie es weiterentwickelt wird. Die Implementierung liegt in [`portal/`](../portal), die Bedienung steht in [`portal/README.md`](../portal/README.md).
 
-> **Stand:** Phase 1 und der Kern von Phase 2 (Kennzahlen, Wettbewerbervergleich, Volltextsuche, Übersicht, automatische Aktualisierung) sind implementiert und gegen ein nachgebautes Internet getestet (46 automatische Tests). Die echten Datenquellen waren aus der Entwicklungsumgebung nicht erreichbar, weil die Netzwerk-Policy sie gesperrt hat. Die Konnektoren folgen den dokumentierten API-Formaten und prüfen jede Antwort defensiv. Der erste Lauf gegen die echten Quellen ist trotzdem ein eigener Prüfschritt (siehe [§13](#13-risiken-und-gegenmaßnahmen)).
+> **Stand:** Phase 1 und der Kern von Phase 2 (Kennzahlen, Wettbewerbervergleich, Volltextsuche, Übersicht, automatische Aktualisierung) sind implementiert und gegen ein nachgebautes Internet getestet (54 automatische Tests, davon ein Krones-Szenario mit den echten Krones-Zahlen). Die echten Datenquellen waren aus der Entwicklungsumgebung nicht erreichbar, weil die Netzwerk-Policy sie gesperrt hat. Die Konnektoren folgen den dokumentierten API-Formaten und prüfen jede Antwort defensiv. Der erste Lauf gegen die echten Quellen ist trotzdem ein eigener Prüfschritt (siehe [§13](#13-risiken-und-gegenmaßnahmen)).
 
 ---
 
@@ -239,7 +239,7 @@ library/
 ## 11. Qualitätssicherung
 
 - **Nachgebautes Internet** ([`tests/fakeweb.py`](../tests/fakeweb.py)): GLEIF, filings.xbrl.org, Wikidata, Eurostat, OpenAlex, ESMA FIRDS, Brave, ein Branchenverband und eine Unternehmenswebsite. Die Website hat 10 Berichtsjahre in DE/EN, ein Archiv mit Links ohne aussagekräftigen Text, ein PDF nur in der Sitemap, ein PDF auf einem CDN, einen defekten Link, robots-gesperrte Bereiche und Störer (Halbjahres-, Nachhaltigkeits-, Vergütungsbericht, Präsentation, Kurzfassung, HV-Einladung).
-- **46 Tests** (`python3 -m unittest discover -s tests -t .`):
+- **54 Tests** (`python3 -m unittest discover -s tests -t .`):
   - 10/10 Jahre in der richtigen Sprache, die Kurzfassung verliert, der Ersatz springt bei einem defekten Link ein
   - robots.txt wird nie verletzt
   - Hashes und Manifest stimmen, ein zweiter Lauf lädt nichts doppelt
@@ -251,6 +251,7 @@ library/
   - Klassifikation mit Beispielen in 10 Sprachen
   - Kennzahlen aus Inline-XBRL: deutsches und englisches Zahlenformat, Vorzeichen, Nullstrich, Vorjahreswerte, Restatement, Segmentwerte ausgeschlossen, Ersatz durch das ZIP-Paket
   - Volltextsuche inkl. PDF-Seiten mit einem nachgebildeten `pdftotext`, Wettbewerbervergleich, Ersatz eines als falsch markierten Dokuments, automatische Aktualisierung
+  - **Krones-Szenario** ([`tests/krones_scenario.py`](../tests/krones_scenario.py)): jede Funktion mit Krones AG (ISIN DE0006335003) und den Krones-Zahlen aus `data/krones_financials_2015_2025.csv`. Das Portal muss Umsatz, EBT, Jahresergebnis und EPS 2019–2025 exakt wiedergeben, inklusive Verlustjahr 2020, −16,1 % Umsatz 2020 und +70 % bis 2025. Die Quellen sind nachgebildet; die LEI ist ein Platzhalter.
 - **Oberfläche** mit Headless-Chromium durchgespielt: Suche, Abruf, Live-Protokoll, Abdeckung, Kennzahlen-Diagramme mit Tooltip, Vergleich, Volltext, Übersicht, Dunkelmodus, Handy-Breite ohne horizontales Scrollen, keine Konsolenfehler.
 - **Kennzahlen im Betrieb:** Abdeckungsquote (Jahre mit Bericht ÷ Zieljahre) je Unternehmen und Land, Anteil Ersatzkandidaten, Fehlerquote je Quelle, robots-Blockaden. Das alles lässt sich aus `documents` und `job_events` ablesen.
 

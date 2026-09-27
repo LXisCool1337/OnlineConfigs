@@ -93,6 +93,10 @@ class JobRunner:
                 if self.echo:
                     self.echo("error", f"Planer: {err}", {})
 
+    @property
+    def stopping(self) -> bool:
+        return self._stop.is_set()
+
     def stop(self) -> None:
         self._stop.set()
         self._wake.set()

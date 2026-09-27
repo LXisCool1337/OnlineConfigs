@@ -33,7 +33,7 @@ Die Reiter:
 python3 -m portal search "Krones"
 python3 -m portal fetch DE0006335003 --industry --nace 28 --keywords "Abfüllanlagen, Verpackungsmaschinen"
 python3 -m portal fetch DE0006335003 --ir-url "https://…/investor-relations/berichte" --url "2016: https://…/gb-2016.pdf"
-python3 -m portal industry 28 --country DE --peers "GEA Group"
+python3 -m portal industry 28 --company DE0006335003   # Branche mit Krones als Bezug (Wettbewerber, Vergleich)
 python3 -m portal universe --source esef       # schnell: alle ESEF-Emittenten
 python3 -m portal universe --source firds      # vollständig: ESMA-Referenzdaten
 python3 -m portal batch --country DE,AT --esef-only --limit 50
@@ -73,7 +73,7 @@ Soll das Portal auf einer anderen Adresse als `127.0.0.1` laufen, muss `access_t
 python3 -m unittest discover -s tests -t .
 ```
 
-Die Tests laufen komplett offline gegen ein nachgebautes Internet ([`tests/fakeweb.py`](../tests/fakeweb.py)).
+Die Tests laufen komplett offline gegen ein nachgebautes Internet ([`tests/fakeweb.py`](../tests/fakeweb.py)). Ein eigener Testfall spielt jede Funktion mit Krones AG und den Krones-Zahlen aus `data/` durch: `python3 -m unittest tests.test_krones -v`.
 
 ## Grenzen
 
