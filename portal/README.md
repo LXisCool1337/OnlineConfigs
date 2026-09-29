@@ -22,6 +22,7 @@ Die Reiter:
 |---|---|
 | **Übersicht** | Bestand, Speicher, zuletzt geladene Dokumente, Unternehmen mit Lücken, laufende Aufträge, Beobachtungsliste |
 | **Unternehmen** | Abruf, Abdeckung (fehlende Jahre per Klick ergänzen), **Kennzahlen aus den ESEF-Berichten** mit Diagrammen und Excel-Export, Dokumentliste („Falsch“ ersetzt ein Dokument beim nächsten Lauf durch die nächstbeste Quelle) |
+| **Bilanz & Value** | Überblick je Unternehmen: Kennzahlen des letzten Jahres, **Buffett-Check** (7 Faustregeln mit Ampel), Bilanzstruktur nach Fristigkeit, einfache Diagramme je Kriterium mit Zielwert, geladene Dateien und alle Werte mit Quelle |
 | **Branchen** | Branchenpaket, eigene Quellen, **Wettbewerbervergleich** (Margen, Wachstum, Eigenkapitalquote, ROE, Median) |
 | **Volltext** | Suche in allen Berichten: Wörter, „Phrasen“, Wortanfang* (Zoll* findet Zölle, Zollpolitik), Bindestrich-Wörter wie E-Mobilität als Phrase, Filter nach Unternehmen und Jahren |
 | **Aufträge**, **Bibliothek**, **Universum** | Auftragsprotokolle, Bestand, Katalog aller EU-Aktien und Stapelabruf (Abbrechen eines Stapelauftrags stoppt auch seine noch wartenden Unternehmensaufträge) |
@@ -41,12 +42,29 @@ python3 -m portal refresh                      # Beobachtungsliste aktualisieren
 python3 -m portal export <LEI>
 python3 -m portal figures DE0006335003         # Kennzahlen-Tabelle (--csv de: Excel-CSV)
 python3 -m portal grep "Zoll*" --limit 10      # Volltextsuche über alle Berichte
+python3 -m portal import-figures DE0006292006 ksb.csv --millions   # Kennzahlen aus PDF-Berichten übernehmen
 python3 -m portal index                        # Volltext nachindizieren, Kennzahlen neu berechnen
 ```
 
 ## Kennzahlen und Volltext
 
 Die Kennzahlen stammen direkt aus dem Inline-XBRL der ESEF-Berichte: Umsatz, EBIT, Jahresergebnis, Ergebnis je Aktie, Cashflow, Investitionen, Bilanz und daraus Margen, Free Cashflow, Eigenkapitalquote und ROE. Jeder Bericht enthält auch das Vorjahr, daher ergeben sechs Berichte sieben Jahre. Angezeigt werden die ursprünglich berichteten Werte; spätere Anpassungen erscheinen als Hinweis. Die Eigenkapitalrendite setzt Gewinn und Eigenkapital derselben Eigentümer ins Verhältnis: den Aktionären zurechenbar, wenn beides getaggt ist, sonst Konzern gesamt (inkl. Minderheiten).
+
+Für Unternehmen ohne ESEF-Daten (filings.xbrl.org führt z. B. keine deutschen Emittenten) lassen sich Zahlen aus den PDF-Geschäftsberichten übernehmen: eine CSV mit den Spalten `metric;fiscal_year;value;report_year;page` (Kennzahlen wie `revenue`, `ebit`, `net_income`, `equity`, `cash`, `debt_noncurrent` …; `--millions` für Beträge in Mio.). Die Werte sind mit Bericht und Seite verknüpft, füllen nur Lücken (ESEF hat Vorrang) und bleiben bei jedem neuen Abruf erhalten.
+
+Der **Buffett-Check** bewertet die letzten fünf Geschäftsjahre:
+
+| Regel | erfüllt | teilweise |
+|---|---|---|
+| Eigenkapitalrendite (Gewinn / Ø Eigenkapital) | Ø ≥ 15 %, kein Jahr < 10 % | Ø ≥ 10 % |
+| Rendite auf das investierte Kapital (EBIT × (1 − Steuerquote) / Ø (Eigenkapital + Finanzschulden − Zahlungsmittel)) | Ø ≥ 15 %, kein Jahr < 10 % | Ø ≥ 10 % |
+| Stabile EBIT-Marge | nie negativ, Spanne ≤ 5 Prozentpunkte | nie negativ |
+| Owner Earnings (Jahresergebnis + Abschreibungen − Investitionen, Buffett 1986) | jedes Jahr positiv | Summe positiv |
+| Wenig Schulden | Netto-Liquidität positiv oder Finanzschulden ≤ 3 Jahresgewinne | ≤ 5 Jahresgewinne |
+| Investitionen / Jahresergebnis | Ø ≤ 50 % | Ø ≤ 100 % |
+| Gewinn je Aktie | am Ende höher als zu Beginn des Zeitraums und in ≥ 70 % der Jahre gestiegen | am Ende höher als zu Beginn |
+
+Das sind Faustregeln aus Buffetts Aktionärsbriefen und der Value-Literatur. Sie ersetzen nicht die Analyse von Geschäftsmodell, Management und Preis. Pensionsrückstellungen zählen nicht zu den Finanzschulden, werden beim Schulden-Kriterium aber genannt.
 
 Die Volltextsuche deckt die ESEF-Berichte immer ab. PDFs werden durchsuchbar, sobald `pdftotext` installiert ist (Linux: `apt install poppler-utils`, macOS: `brew install poppler`, Windows: Poppler-Binaries in den PATH). Danach einmal `python3 -m portal index` ausführen.
 

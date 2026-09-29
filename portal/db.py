@@ -122,6 +122,18 @@ CREATE TABLE IF NOT EXISTS financials (
     restated REAL,
     PRIMARY KEY (lei, fiscal_year, metric)
 );
+CREATE TABLE IF NOT EXISTS financials_manual (
+    lei TEXT NOT NULL,
+    fiscal_year INTEGER NOT NULL,
+    metric TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT,
+    source TEXT,
+    doc_id INTEGER,
+    page TEXT,
+    created_at TEXT,
+    PRIMARY KEY (lei, fiscal_year, metric)
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS doc_text USING fts5(
     content, doc_id UNINDEXED, page UNINDEXED, tokenize = 'unicode61 remove_diacritics 2'
 );
@@ -323,6 +335,7 @@ class Database:
             self._conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
             self._conn.execute("DELETE FROM doc_text WHERE doc_id = ?", (doc_id,))
             self._conn.execute("DELETE FROM doc_index WHERE doc_id = ?", (doc_id,))
+            self._conn.execute("UPDATE financials_manual SET doc_id = NULL WHERE doc_id = ?", (doc_id,))
 
     def block_url(self, url: str, lei: str | None, reason: str = "") -> None:
         self.execute("INSERT OR REPLACE INTO blocked_urls (url, lei, reason, created_at) VALUES (?, ?, ?, ?)",
@@ -339,6 +352,20 @@ class Database:
             self._conn.executemany(
                 "INSERT INTO financials (lei, fiscal_year, metric, value, unit, period_end, concept, doc_id, restated) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+
+    def replace_manual_financials(self, lei: str, rows: list[tuple]) -> None:
+        """Figures read from PDF reports: (lei, year, metric, value, unit, source, doc_id, page) per row.
+        New rows replace stored ones for the same year and metric; others are kept."""
+        stamp = now_iso()
+        with self.transaction():
+            self._conn.executemany(
+                "INSERT INTO financials_manual (lei, fiscal_year, metric, value, unit, source, doc_id, page, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(lei, fiscal_year, metric) DO UPDATE SET "
+                "value = excluded.value, unit = excluded.unit, source = excluded.source, doc_id = excluded.doc_id, "
+                "page = excluded.page, created_at = excluded.created_at", [(*r, stamp) for r in rows])
+
+    def manual_financials(self, lei: str) -> list[dict]:
+        return self.query("SELECT * FROM financials_manual WHERE lei = ? ORDER BY fiscal_year, metric", (lei,))
 
     def store_text(self, doc_id: int, chunks: list[tuple[int | None, str]], status: str) -> None:
         with self.transaction():

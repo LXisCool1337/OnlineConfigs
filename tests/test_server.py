@@ -205,6 +205,31 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.app.settings.contact_email, before)             # nothing applied
         self.wait_for(job_id)
 
+    def test_07_value_page(self):
+        lei = COMPANY["lei"]
+        companies = self.json("GET", "/api/value/companies")["companies"]
+        self.assertEqual(companies[0]["lei"], lei)
+        self.assertEqual(companies[0]["figure_years"], 7)
+        view = self.json("GET", f"/api/companies/{lei}/value")
+        self.assertEqual(view["years"], list(range(2019, 2026)))
+        self.assertEqual([c["key"] for c in view["checks"]],
+                         ["roe", "roic", "margin", "owner_earnings", "debt", "capex", "eps"])
+        self.assertTrue(view["documents"])
+        self.json("GET", "/api/companies/AAAAAAAAAAAAAAAAAAAA/value", status=404)
+
+        self.json("POST", f"/api/companies/{lei}/figures", {"rows": "x"}, status=400)
+        self.json("POST", f"/api/companies/{lei}/figures", {"rows": [{"metric": "roe", "fiscal_year": 2015,
+                                                                      "value": 1}]}, status=400)
+        self.json("POST", f"/api/companies/{lei}/figures", {"rows": [], "currency": "EURO"}, status=400)
+        result = self.json("POST", f"/api/companies/{lei}/figures", {"millions": True, "rows": [
+            {"metric": "revenue", "fiscal_year": 2015, "value": 2900, "page": "7"}]})
+        self.assertEqual(result["imported"], 1)
+        self.assertIn(2015, result["years"])
+        self.assertIn(2015, result["origin"]["PDF"])
+
+        resp, body = self.request("GET", "/")
+        self.assertIn(b'data-tab="value"', body)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,6 +46,20 @@ METRICS = [
      ["ifrs-full:EquityAttributableToOwnersOfParent"]),
     ("cash", "Zahlungsmittel", "instant", "money", ["ifrs-full:CashAndCashEquivalents"]),
     ("liabilities", "Schulden", "instant", "money", ["ifrs-full:Liabilities"]),
+    # Balance sheet structure and the inputs of the value metrics
+    ("noncurrent_assets", "Langfristige Vermögenswerte", "instant", "money", ["ifrs-full:NoncurrentAssets"]),
+    ("current_assets", "Kurzfristige Vermögenswerte", "instant", "money", ["ifrs-full:CurrentAssets"]),
+    ("noncurrent_liabilities", "Langfristige Schulden", "instant", "money", ["ifrs-full:NoncurrentLiabilities"]),
+    ("current_liabilities", "Kurzfristige Schulden", "instant", "money", ["ifrs-full:CurrentLiabilities"]),
+    ("pensions", "Pensionsrückstellungen", "instant", "money", ["ifrs-full:NoncurrentProvisionsForEmployeeBenefits"]),
+    ("debt_noncurrent", "Finanzschulden langfristig", "instant", "money",
+     ["ifrs-full:NoncurrentPortionOfNoncurrentBorrowings", "ifrs-full:LongtermBorrowings",
+      "ifrs-full:NoncurrentFinancialLiabilities"]),
+    ("debt_current", "Finanzschulden kurzfristig", "instant", "money",
+     ["ifrs-full:CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings", "ifrs-full:ShorttermBorrowings",
+      "ifrs-full:CurrentFinancialLiabilities"]),
+    ("income_tax", "Ertragsteuern", "duration", "money", ["ifrs-full:IncomeTaxExpenseContinuingOperations"]),
+    ("interest_expense", "Finanzaufwand", "duration", "money", ["ifrs-full:FinanceCosts"]),
 ]
 DERIVED = [
     ("revenue_growth", "Umsatzwachstum", "pct"),
@@ -53,14 +67,25 @@ DERIVED = [
     ("net_margin", "Nettomarge", "pct"),
     ("fcf", "Free Cashflow", "money"),
     ("fcf_margin", "FCF-Marge", "pct"),
+    ("owner_earnings", "Owner Earnings", "money"),
     ("equity_ratio", "Eigenkapitalquote", "pct"),
     ("roe", "Eigenkapitalrendite", "pct"),
+    ("roic", "Rendite auf das investierte Kapital", "pct"),
+    ("financial_debt", "Finanzschulden", "money"),
+    ("net_cash", "Netto-Liquidität", "money"),
+    ("debt_payback", "Schuldentilgung aus Gewinn", "years"),
+    ("interest_coverage", "Zinsdeckung", "times"),
+    ("capex_ratio", "Investitionen in % des Gewinns", "pct"),
 ]
 LABELS = {m[0]: m[1] for m in METRICS} | {d[0]: d[1] for d in DERIVED}
 UNITS = {m[0]: m[3] for m in METRICS} | {d[0]: d[2] for d in DERIVED}
-ORDER = ["revenue", "revenue_growth", "gross_profit", "ebit", "ebit_margin", "ebt", "net_income", "net_income_parent",
-         "net_margin", "eps", "d_and_a", "operating_cash_flow", "capex", "capex_intangibles", "fcf", "fcf_margin",
-         "dividends_paid", "total_assets", "equity", "equity_parent", "equity_ratio", "roe", "cash", "liabilities"]
+ORDER = ["revenue", "revenue_growth", "gross_profit", "ebit", "ebit_margin", "ebt", "income_tax", "net_income",
+         "net_income_parent", "net_margin", "eps", "d_and_a", "interest_expense", "interest_coverage",
+         "operating_cash_flow", "capex", "capex_intangibles", "capex_ratio", "fcf", "fcf_margin", "owner_earnings",
+         "dividends_paid", "total_assets", "noncurrent_assets", "current_assets", "cash", "equity", "equity_parent",
+         "equity_ratio", "roe", "roic", "liabilities", "noncurrent_liabilities", "current_liabilities", "pensions",
+         "debt_noncurrent", "debt_current", "financial_debt", "net_cash", "debt_payback"]
+UNIT_LABELS = {"pct": "%", "years": "Jahre", "times": "x"}
 CONCEPTS = {concept: (key, kind, rank) for key, _l, kind, _u, concepts in METRICS
             for rank, concept in enumerate(concepts)}
 
@@ -179,10 +204,46 @@ def report_streams(path, kind: str):
     return [open(path, "rb")]
 
 
+def _invested_capital(v: dict) -> float | None:
+    """Equity plus financial debt minus cash: the capital the operating business works with."""
+    if v.get("equity") is None or v.get("cash") is None or (v.get("debt_noncurrent") is None
+                                                           and v.get("debt_current") is None):
+        return None
+    return v["equity"] + abs(v.get("debt_noncurrent") or 0) + abs(v.get("debt_current") or 0) - v["cash"]
+
+
 def derive(values: dict[int, dict[str, float]]) -> None:
-    """Add ratios in place: growth, margins, free cash flow, equity ratio, return on equity."""
-    for year, v in values.items():
+    """Add ratios in place: growth, margins, free cash flow, owner earnings, returns and debt measures."""
+    for year in sorted(values):
+        v = values[year]
         prev = values.get(year - 1, {})
+        capex = None
+        if v.get("capex") is not None or v.get("capex_intangibles") is not None:
+            capex = abs(v.get("capex") or 0) + abs(v.get("capex_intangibles") or 0)
+        income = v.get("net_income")
+        # Owner earnings (Buffett, letter 1986): earnings + depreciation/amortisation - capital expenditure.
+        # Reports do not split maintenance from growth capex, so all of it counts (the conservative reading).
+        if income is not None and v.get("d_and_a") is not None and capex is not None:
+            v["owner_earnings"] = income + abs(v["d_and_a"]) - capex
+        if capex is not None and income and income > 0:
+            v["capex_ratio"] = capex / income
+        if v.get("debt_noncurrent") is not None or v.get("debt_current") is not None:
+            v["financial_debt"] = abs(v.get("debt_noncurrent") or 0) + abs(v.get("debt_current") or 0)
+            if v.get("cash") is not None:
+                v["net_cash"] = v["cash"] - v["financial_debt"]
+            if income and income > 0:
+                v["debt_payback"] = v["financial_debt"] / income
+        if v.get("ebit") is not None and v.get("interest_expense"):
+            v["interest_coverage"] = v["ebit"] / abs(v["interest_expense"])
+        # ROIC: operating profit after tax on the invested capital (averaged with the prior year when known)
+        invested = _invested_capital(v)
+        if v.get("ebit") is not None and invested is not None and v.get("income_tax") is not None \
+                and (v.get("ebt") or 0) > 0:
+            rate = min(max(abs(v["income_tax"]) / v["ebt"], 0.0), 0.6)
+            before = _invested_capital(prev)
+            base = (invested + before) / 2 if before is not None else invested
+            if base > 0:
+                v["roic"] = v["ebit"] * (1 - rate) / base
         rev = v.get("revenue")
         if rev:
             if prev.get("revenue"):
@@ -248,6 +309,15 @@ def extract(ctx, lei: str) -> dict:
                     entry["restated"] = current["value"]
                 merged[(metric, year)] = entry
 
+    # Figures taken from PDF reports (import_manual) fill what ESEF does not cover; ESEF always wins.
+    manual = 0
+    for row in ctx.db.manual_financials(lei):
+        key = (row["metric"], row["fiscal_year"])
+        if key not in merged:
+            merged[key] = {"value": row["value"], "currency": row["unit"] or "", "concept": row["source"],
+                           "period_end": None, "doc_id": row["doc_id"], "as_reported": True}
+            manual += 1
+
     table: dict[int, dict[str, float]] = {}
     for (metric, year), item in merged.items():
         table.setdefault(year, {})[metric] = item["value"]
@@ -262,9 +332,55 @@ def extract(ctx, lei: str) -> dict:
     ctx.db.replace_financials(lei, rows)
     years = sorted(table)
     if years:
-        ctx.log("ok", f"Kennzahlen aus {len(per_report)} ESEF-Berichten: {len(years)} Geschäftsjahre "
+        extra = f" und {manual} Werten aus PDF-Berichten" if manual else ""
+        ctx.log("ok", f"Kennzahlen aus {len(per_report)} ESEF-Berichten{extra}: {len(years)} Geschäftsjahre "
                       f"({years[0]}–{years[-1]})", lei=lei)
-    return {"reports": len(per_report), "years": years}
+    return {"reports": len(per_report), "manual": manual, "years": years}
+
+
+def import_manual(db, lei: str, rows: list[dict], *, currency: str = "EUR", millions: bool = False) -> int:
+    """Store figures read from PDF reports: {metric, fiscal_year, value, report_year?, page?} per row.
+
+    Only reported line items (METRICS) are accepted; ratios are always derived. With ``millions`` the
+    money values are given in millions. ``report_year`` links the value to that year's annual report
+    in the library, ``page`` is the page it was read from."""
+    base = {m[0] for m in METRICS}
+    cleaned = []
+    for i, row in enumerate(rows, 1):
+        metric = str(row.get("metric") or "").strip()
+        if metric not in base:
+            raise ValueError(f"Zeile {i}: unbekannte Kennzahl „{metric}“ (erlaubt: {', '.join(sorted(base))})")
+        try:
+            year = int(row["fiscal_year"])
+            value = float(str(row["value"]).replace(" ", "").replace(",", ".")) if isinstance(row["value"], str) \
+                else float(row["value"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"Zeile {i}: Geschäftsjahr und Wert müssen Zahlen sein") from None
+        if not 1990 <= year <= 2100 or value != value or value in (float("inf"), float("-inf")):
+            raise ValueError(f"Zeile {i}: ungültiges Jahr oder ungültiger Wert")
+        if millions and UNITS[metric] == "money":
+            value *= 1_000_000
+        page = str(row.get("page") or "").strip()[:20]
+        doc = None
+        if row.get("report_year"):
+            doc = db.one("SELECT id FROM documents WHERE lei = ? AND scope = 'company' AND category IN "
+                         "('annual_report', 'single_entity_statements') AND fiscal_year = ? ORDER BY id LIMIT 1",
+                         (lei, int(row["report_year"])))
+        unit = currency.upper() if UNITS[metric] in ("money", "per_share") else ""
+        cleaned.append((lei, year, metric, value, unit, f"pdf:{page}" if page else "manuell",
+                        doc["id"] if doc else None, page or None))
+    db.replace_manual_financials(lei, cleaned)
+    return len(cleaned)
+
+
+def source_label(concept: str | None) -> str:
+    if not concept:
+        return "berechnet"
+    if concept.startswith("pdf:"):
+        return f"PDF S. {concept[4:]}"
+    if concept == "manuell":
+        return "manuell"
+    return "ESEF"
 
 
 def _file_name(doc: dict) -> str:
@@ -276,17 +392,25 @@ def table_for(db, lei: str) -> dict:
     rows = db.query("SELECT * FROM financials WHERE lei = ? ORDER BY fiscal_year", (lei,))
     years = sorted({r["fiscal_year"] for r in rows})
     by_metric: dict[str, dict] = {}
+    sources: dict[str, dict] = {}
+    origin: dict[str, set] = {"ESEF": set(), "PDF": set()}
     currency = ""
     notes = []
     for r in rows:
         by_metric.setdefault(r["metric"], {})[str(r["fiscal_year"])] = r["value"]
+        label = source_label(r["concept"])
+        sources.setdefault(r["metric"], {})[str(r["fiscal_year"])] = label
+        if label != "berechnet":
+            origin["ESEF" if label == "ESEF" else "PDF"].add(r["fiscal_year"])
         if r["metric"] == "revenue" and r["unit"]:
             currency = r["unit"]
         if r["restated"] is not None:
             notes.append({"year": r["fiscal_year"], "metric": r["metric"], "label": LABELS.get(r["metric"]),
                           "reported": r["value"], "restated": r["restated"]})
-    metrics = [{"key": k, "label": LABELS[k], "unit": UNITS[k], "values": by_metric[k]} for k in ORDER if k in by_metric]
-    return {"lei": lei, "years": years, "currency": currency, "metrics": metrics, "restatements": notes}
+    metrics = [{"key": k, "label": LABELS[k], "unit": UNITS[k], "values": by_metric[k], "sources": sources[k]}
+               for k in ORDER if k in by_metric]
+    return {"lei": lei, "years": years, "currency": currency, "metrics": metrics, "restatements": notes,
+            "origin": {k: sorted(v) for k, v in origin.items()}}
 
 
 def csv_for(db, lei: str, style: str = "de") -> str:
@@ -295,8 +419,7 @@ def csv_for(db, lei: str, style: str = "de") -> str:
     sep = ";" if style == "de" else ","
     lines = [sep.join(["metric", "label", "unit"] + [str(y) for y in data["years"]])]
     for m in data["metrics"]:
-        unit = data["currency"] if m["unit"] == "money" else ("%" if m["unit"] == "pct" else
-                                                              f"{data['currency']}/Aktie")
+        unit = data["currency"] if m["unit"] == "money" else UNIT_LABELS.get(m["unit"], f"{data['currency']}/Aktie")
         cells = []
         for y in data["years"]:
             v = m["values"].get(str(y))
@@ -342,3 +465,172 @@ def comparison(db, nace: str, focus_lei: str | None = None) -> dict:
             median[key] = values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
     return {"nace": nace, "rows": rows, "median": median,
             "metrics": [{"key": k, "label": LABELS[k], "unit": UNITS[k]} for k in COMPARE_KEYS]}
+
+
+# --- balance sheet and value view (Buffett's rules of thumb) ---------------------------------
+
+CHECK_YEARS = 5  # the checks judge the latest five fiscal years
+
+# Each check: key, chart metric, title, rule text, reference line for the chart (None = no line).
+VALUE_CHECKS = [
+    ("roe", "roe", "Eigenkapitalrendite über 15 %",
+     "Buffett sucht Unternehmen, die über Jahre mehr als 15 % auf das Eigenkapital verdienen, und zwar ohne "
+     "hohe Schulden.", 0.15),
+    ("roic", "roic", "Rendite auf das investierte Kapital über 15 %",
+     "EBIT nach Steuern geteilt durch Eigenkapital plus Finanzschulden minus Zahlungsmittel. Hohe Werte "
+     "unabhängig von der Finanzierung deuten auf einen Burggraben hin.", 0.15),
+    ("margin", "ebit_margin", "Stabile operative Marge",
+     "Ein dauerhafter Wettbewerbsvorteil zeigt sich in Margen, die kaum schwanken und nie negativ werden.", None),
+    ("owner_earnings", "owner_earnings", "Owner Earnings in jedem Jahr positiv",
+     "Jahresergebnis plus Abschreibungen minus Investitionen (Buffett 1986): das Geld, das den Eigentümern "
+     "wirklich zufließt.", None),
+    ("debt", "net_cash", "Wenig Schulden: höchstens 3 Jahresgewinne",
+     "Wenig Schulden: Die Finanzschulden sollten aus drei bis vier Jahresgewinnen zurückgezahlt werden können. "
+     "Das Diagramm zeigt Zahlungsmittel minus Finanzschulden.", None),
+    ("capex", "capex_ratio", "Investitionen unter 50 % des Gewinns",
+     "Ein Geschäft, das wenig Kapital für den Erhalt braucht, kann mehr ausschütten oder zu hohen Renditen "
+     "reinvestieren.", 0.5),
+    ("eps", "eps", "Gewinn je Aktie steigt beständig",
+     "Ein wachsender Gewinn je Aktie über viele Jahre ist das Ergebnis eines guten Geschäfts mit fähigem "
+     "Management.", None),
+]
+STATUS_LABELS = {"good": "erfüllt", "warn": "teilweise", "bad": "nicht erfüllt", "na": "keine Daten"}
+
+
+def _pct(v: float) -> str:
+    return f"{v * 100:.1f} %".replace(".", ",")
+
+
+def _mio(v: float) -> str:
+    return f"{v / 1e6:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".") + " Mio."
+
+
+def _check(key: str, series: dict[str, list[tuple[int, float]]], latest: dict) -> tuple[str, str]:
+    """(status, summary) of one Buffett check over the latest CHECK_YEARS years."""
+    if key in ("roe", "roic"):
+        vals = [v for _y, v in series[key]]
+        if not vals:
+            return "na", ""
+        avg = sum(vals) / len(vals)
+        status = "good" if avg >= 0.15 and min(vals) >= 0.10 else "warn" if avg >= 0.10 else "bad"
+        return status, f"Ø {_pct(avg)}, niedrigster Wert {_pct(min(vals))}"
+    if key == "margin":
+        vals = [v for _y, v in series["ebit_margin"]]
+        if len(vals) < 2:
+            return "na", ""
+        spread = max(vals) - min(vals)
+        status = "bad" if min(vals) <= 0 else "good" if spread <= 0.05 else "warn"
+        return status, f"{_pct(min(vals))} bis {_pct(max(vals))} (Spanne {spread * 100:.1f} Prozentpunkte)".replace(".", ",")
+    if key == "owner_earnings":
+        pairs = series["owner_earnings"]
+        if not pairs:
+            return "na", ""
+        positive = sum(1 for _y, v in pairs if v > 0)
+        income = sum(v for y, v in series["net_income"] if y in {p[0] for p in pairs})
+        total = sum(v for _y, v in pairs)
+        status = "good" if positive == len(pairs) else "warn" if total > 0 else "bad"
+        share = f", {total / income * 100:.0f} % des Jahresergebnisses" if income > 0 else ""
+        return status, f"{positive} von {len(pairs)} Jahren positiv, zusammen {_mio(total)}{share}"
+    if key == "debt":
+        if latest.get("financial_debt") is None:
+            return "na", ""
+        pension = f"; zusätzlich Pensionsrückstellungen {_mio(latest['pensions'])}" if latest.get("pensions") else ""
+        if (latest.get("net_cash") or 0) > 0:
+            return "good", f"mehr Zahlungsmittel als Finanzschulden ({_mio(latest['net_cash'])} netto){pension}"
+        years = latest.get("debt_payback")
+        if years is None:
+            return "bad", "kein Gewinn, aus dem Schulden getilgt werden könnten" + pension
+        status = "good" if years <= 3 else "warn" if years <= 5 else "bad"
+        return status, f"Finanzschulden = {years:.1f} Jahresgewinne".replace(".", ",") + pension
+    if key == "capex":
+        vals = [v for _y, v in series["capex_ratio"]]
+        if not vals:
+            return "na", ""
+        avg = sum(vals) / len(vals)
+        status = "good" if avg <= 0.5 else "warn" if avg <= 1.0 else "bad"
+        return status, f"Ø {_pct(avg)} des Jahresergebnisses"
+    if key == "eps":
+        pairs = series["eps"]
+        if len(pairs) < 3:
+            return "na", ""
+        ups = sum(1 for (_a, x), (_b, y) in zip(pairs, pairs[1:]) if y > x)
+        first, last = pairs[0], pairs[-1]
+        span = last[0] - first[0]
+        growth = ""
+        if first[1] > 0 and last[1] > 0 and span > 0:
+            growth = f", {((last[1] / first[1]) ** (1 / span) - 1) * 100:.1f} % pro Jahr".replace(".", ",")
+        status = "good" if last[1] > first[1] and ups >= 0.7 * (len(pairs) - 1) else \
+            "warn" if last[1] > first[1] else "bad"
+        return status, f"{ups} von {len(pairs) - 1} Jahren gestiegen{growth}"
+    return "na", ""
+
+
+def _balance(values: dict[str, float]) -> dict | None:
+    """Assets by how long they are tied up, capital by how long it stays: the golden balance sheet rule."""
+    total = values.get("total_assets")
+    if not total or values.get("equity") is None:
+        return None
+    cash = values.get("cash") or 0.0
+    noncurrent = values.get("noncurrent_assets")
+    if noncurrent is None and values.get("current_assets") is not None:
+        noncurrent = total - values["current_assets"]
+    if noncurrent is not None:
+        assets = [("noncurrent_assets", "Langfristiges Vermögen", noncurrent),
+                  ("current_other", "Vorräte, Forderungen, Sonstiges", total - noncurrent - cash),
+                  ("cash", "Zahlungsmittel", cash)]
+    else:
+        assets = [("other_assets", "Übrige Vermögenswerte", total - cash), ("cash", "Zahlungsmittel", cash)]
+    equity = values["equity"]
+    long_debt, short_debt = values.get("noncurrent_liabilities"), values.get("current_liabilities")
+    if long_debt is None and short_debt is not None:
+        long_debt = total - equity - short_debt
+    if short_debt is None and long_debt is not None:
+        short_debt = total - equity - long_debt
+    if long_debt is not None:
+        capital = [("equity", "Eigenkapital", equity), ("noncurrent_liabilities", "Langfristige Schulden", long_debt),
+                   ("current_liabilities", "Kurzfristige Schulden", short_debt)]
+    else:
+        capital = [("equity", "Eigenkapital", equity), ("liabilities", "Schulden", total - equity)]
+    out = {"total": total, "assets": [{"key": k, "label": l, "value": v} for k, l, v in assets],
+           "capital": [{"key": k, "label": l, "value": v} for k, l, v in capital]}
+    if noncurrent and long_debt is not None:
+        out["coverage"] = (equity + long_debt) / noncurrent  # > 1: long-term assets fully financed long-term
+    return out
+
+
+def value_view(db, lei: str) -> dict:
+    """Everything the 'Bilanz & Value' page shows for one company, computed from the stored key figures."""
+    data = table_for(db, lei)
+    company = db.company(lei) or {"lei": lei, "name": lei}
+    by = {m["key"]: {int(y): v for y, v in m["values"].items()} for m in data["metrics"]}
+    years = data["years"]
+    recent = years[-CHECK_YEARS:]
+    series = {key: [(y, by[key][y]) for y in recent if y in by.get(key, {})]
+              for key in ("roe", "roic", "ebit_margin", "owner_earnings", "net_income", "capex_ratio", "eps")}
+    with_assets = [y for y in years if by.get("total_assets", {}).get(y)]
+    year = with_assets[-1] if with_assets else (years[-1] if years else None)
+    latest = {k: v[year] for k, v in by.items() if year in v} if year else {}
+    before = {k: v[year - 1] for k, v in by.items() if year and year - 1 in v}
+
+    checks = []
+    for key, metric, title, rule, threshold in VALUE_CHECKS:
+        status, summary = _check(key, series, latest)
+        checks.append({"key": key, "metric": metric, "title": title, "rule": rule, "threshold": threshold,
+                       "status": status, "status_label": STATUS_LABELS[status], "summary": summary})
+
+    kpis = []
+    for key in ("revenue", "net_income", "owner_earnings", "equity_ratio", "net_cash", "roe"):
+        if key in latest:
+            kpis.append({"key": key, "label": LABELS[key], "unit": UNITS[key], "value": latest[key],
+                         "previous": before.get(key)})
+
+    counts = {r["doc_id"]: r["n"] for r in db.query(
+        "SELECT doc_id, COUNT(*) AS n FROM financials WHERE lei = ? AND doc_id IS NOT NULL GROUP BY doc_id", (lei,))}
+    documents = [{"id": d["id"], "fiscal_year": d["fiscal_year"], "fy_label": d["fy_label"], "category": d["category"],
+                  "title": d["title"], "language": d["language"], "size": d["size"], "mime": d["mime"],
+                  "source": d["source"], "figures": counts.get(d["id"], 0)}
+                 for d in db.company_documents(lei)]
+    return {"lei": lei, "name": company.get("name"), "country": company.get("country"), "currency": data["currency"],
+            "years": years, "check_years": recent, "year": year, "origin": data["origin"], "kpis": kpis,
+            "balance": _balance(latest) if latest else None, "checks": checks, "metrics": data["metrics"],
+            "documents": documents}

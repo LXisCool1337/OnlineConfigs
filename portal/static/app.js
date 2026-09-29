@@ -88,6 +88,7 @@ function showTab(name) {
   if (name === "universe") loadUniverse();
   if (name === "settings") loadSettings();
   if (name === "industry") loadIndustry();
+  if (name === "value") loadValueCompanies();
 }
 
 // --- company search and detail -----------------------------------------------------------
@@ -527,6 +528,8 @@ function fmtMetric(v, unit) {
   if (v === null || v === undefined) return "–";
   if (unit === "pct") return NF1.format(v * 100) + " %";
   if (unit === "per_share") return NF2.format(v);
+  if (unit === "years") return NF1.format(v) + " J.";
+  if (unit === "times") return NF1.format(v) + "x";
   const m = v / 1e6;
   return Math.abs(m) >= 1000 ? NF0.format(m) : NF1.format(m);
 }
@@ -540,6 +543,8 @@ function chartValue(v, unit) {
 function fmtChart(v, unit) {
   if (unit === "pct") return NF1.format(v) + " %";
   if (unit === "per_share") return NF2.format(v);
+  if (unit === "years") return NF1.format(v) + " J.";
+  if (unit === "times") return NF1.format(v) + "x";
   return Math.abs(v) >= 1000 ? NF0.format(v) : NF1.format(v);
 }
 
@@ -600,15 +605,17 @@ function attachTooltip(wrap, chart, hit, bar, lines, anchor) {
   hit.addEventListener("blur", hide);
 }
 
-function columnChart({ title, sub, years, values, unit, width }) {
+function columnChart({ title, sub, years, values, unit, width, threshold, badge }) {
   const data = years.map((y) => {
     const v = values[String(y)];
     return { year: y, v: v === undefined || v === null ? null : chartValue(v, unit) };
   });
   const present = data.filter((d) => d.v !== null);
   if (present.length < 2) return null;
-  const W = Math.max(260, Math.round(width || 340)), H = 190, M = { t: 22, r: 10, b: 22, l: 46 };
-  const ticks = niceTicks(Math.min(0, ...present.map((d) => d.v)), Math.max(0, ...present.map((d) => d.v)), 4);
+  const ref = threshold === undefined || threshold === null ? null : chartValue(threshold, unit);
+  const W = Math.max(260, Math.round(width || 340)), H = 190, M = { t: 22, r: ref === null ? 10 : 62, b: 22, l: 46 };
+  const span = present.map((d) => d.v).concat(ref === null ? [] : [ref]);
+  const ticks = niceTicks(Math.min(0, ...span), Math.max(0, ...span), 4);
   const lo = ticks[0], hi = ticks[ticks.length - 1];
   const pw = W - M.l - M.r, ph = H - M.t - M.b;
   const y = (v) => M.t + ph - ((v - lo) / (hi - lo)) * ph;
@@ -619,7 +626,9 @@ function columnChart({ title, sub, years, values, unit, width }) {
     chart.append(svg("line", { x1: M.l, x2: W - M.r, y1: y(t), y2: y(t), class: t === 0 ? "base" : "grid" }));
     chart.append(svg("text", { x: M.l - 6, y: y(t) + 3, "text-anchor": "end", class: "tick" }, fmtTick(t, unit)));
   }
-  const wrap = el("div", { class: "chart-wrap" }, el("p", { class: "chart-title" }, title), el("p", { class: "chart-sub" }, sub), chart);
+  const wrap = el("div", { class: "chart-wrap" }, el("p", { class: "chart-title" }, title, badge ? " " : null, badge || null),
+    el("p", { class: "chart-sub" }, sub), chart);
+
   const last = present[present.length - 1];
   data.forEach((d, i) => {
     const cx = M.l + band * i + band / 2;
@@ -636,6 +645,12 @@ function columnChart({ title, sub, years, values, unit, width }) {
     chart.append(hit);
     attachTooltip(wrap, chart, hit, bar, [fmtChart(d.v, unit) + (sub.startsWith("Mio") ? " Mio." : ""), "Geschäftsjahr " + d.year], [cx, Math.min(y(d.v), y(0))]);
   });
+  if (ref !== null) {  // drawn over the bars; the label wears a surface halo so it stays legible
+    const line = svg("line", { x1: M.l, x2: W - M.r, y1: y(ref), y2: y(ref), class: "target" });
+    const text = Number.isInteger(ref) ? fmtTick(ref, unit) : fmtChart(ref, unit);
+    const label = svg("text", { x: W - M.r + 6, y: y(ref) + 4, class: "tick target-label" }, "Ziel " + text);
+    chart.append(line, label);  // pointer-events: none (CSS), so the hover targets below keep working
+  }
   return wrap;
 }
 
@@ -749,6 +764,169 @@ function renderCompare() {
     el("td", {}, r.fiscal_year || "–"), cols.map((m) => el("td", {}, fmtMetric(r[m.key], m.unit) + (m.unit === "money" && r[m.key] !== undefined && r.currency ? " " + r.currency : "")))));
   body.push(el("tr", { class: "median" }, el("td", {}, "Median"), el("td", {}, ""), cols.map((m) => el("td", {}, data.median[m.key] !== undefined ? fmtMetric(data.median[m.key], m.unit) : ""))));
   $("#i-table").replaceChildren(el("thead", {}, head), el("tbody", {}, body));
+}
+
+// --- Bilanz & Value -------------------------------------------------------------------------
+
+const STATUS_ICON = { good: "✓", warn: "!", bad: "✗", na: "–" };
+const STATUS_CLASS = { good: "ok", warn: "warn", bad: "err", na: "" };
+const BALANCE_SHADE = { noncurrent_assets: "long", other_assets: "long", current_other: "mid", cash: "short",
+  equity: "long", noncurrent_liabilities: "mid", current_liabilities: "short", liabilities: "short" };
+
+function statusTag(check) {
+  return el("span", { class: "tag " + STATUS_CLASS[check.status] }, STATUS_ICON[check.status] + " " + check.status_label);
+}
+
+async function loadValueCompanies() {
+  const select = $("#v-company");
+  try {
+    const { companies } = await api("GET", "/api/value/companies");
+    $("#v-empty").hidden = companies.length > 0;
+    if (!companies.length) { $("#v-body").hidden = true; select.replaceChildren(); return; }
+    const current = select.value || (state.company && state.company.lei) || "";
+    select.replaceChildren(...companies.map((c) => el("option", { value: c.lei },
+      c.name + (c.country ? " (" + c.country + ")" : "") + " · " +
+      (c.figure_years ? c.figure_years + " Jahre Kennzahlen" : "keine Kennzahlen") + " · " + c.documents + " Dok.")));
+    select.value = companies.some((c) => c.lei === current) ? current : companies[0].lei;
+    loadValue(select.value);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function loadValue(lei) {
+  try {
+    state.value = await api("GET", "/api/companies/" + lei + "/value");
+    renderValue(state.value);
+  } catch (err) { toast("Kennzahlen konnten nicht geladen werden: " + err.message, "error"); }
+}
+
+function kpiTile(k, cur) {
+  const money = k.unit === "money";
+  const value = fmtMetric(k.value, k.unit);
+  let delta = null;
+  if (k.previous !== null && k.previous !== undefined) {
+    const diff = money ? (k.previous !== 0 ? (k.value - k.previous) / Math.abs(k.previous) : null) : k.value - k.previous;
+    if (diff !== null) {
+      const up = diff >= 0;
+      const text = money ? NF1.format(Math.abs(diff) * 100) + " %" : NF1.format(Math.abs(diff) * 100) + " Pp.";
+      delta = el("small", { class: up ? "up" : "down" }, (up ? "▲ " : "▼ ") + text + " ggü. Vorjahr");
+    }
+  }
+  return el("div", { class: "stat" }, el("span", {}, k.label), el("b", {}, value), delta);
+}
+
+function renderValue(v) {
+  $("#v-body").hidden = false;
+  const cur = v.currency || "";
+  $("#v-name").textContent = v.name;
+  const origin = [];
+  if (v.origin.ESEF.length) origin.push("ESEF-Berichte (GJ " + v.origin.ESEF[0] + "–" + v.origin.ESEF[v.origin.ESEF.length - 1] + ")");
+  if (v.origin.PDF.length) origin.push("PDF-Geschäftsberichte (GJ " + v.origin.PDF[0] + "–" + v.origin.PDF[v.origin.PDF.length - 1] + ", mit Seitenangabe)");
+  $("#v-sub").textContent = "LEI " + v.lei + (v.year ? " · Stand Geschäftsjahr " + v.year : "") +
+    (cur && v.years.length ? " · Beträge in Mio. " + cur : "") + (origin.length ? " · Zahlen aus " + origin.join(" und ") : "");
+  const hasData = v.years.length > 0;
+  $("#v-nodata").hidden = hasData;
+  $("#v-nodata").textContent = hasData ? "" : "Für dieses Unternehmen gibt es noch keine Kennzahlen: Es liegen keine ESEF-Berichte vor, " +
+    "und aus den PDF-Berichten wurden noch keine Zahlen übernommen (python -m portal import-figures).";
+  $("#v-kpis").replaceChildren(...v.kpis.map((k) => kpiTile(k, cur)));
+  $("#v-top").hidden = !hasData;
+  $("#v-charts-card").hidden = !hasData;
+
+  // Buffett check
+  const period = v.check_years.length ? "GJ " + v.check_years[0] + "–" + v.check_years[v.check_years.length - 1] : "";
+  $("#v-check-sub").textContent = "Faustregeln aus Buffetts Aktionärsbriefen und der Value-Literatur, bewertet über " + period +
+    ". Begründung je Regel unter den Diagrammen. Kein Ersatz für die Analyse des Geschäftsmodells.";
+  $("#v-checks").replaceChildren(...v.checks.map((c) => el("li", {},
+    el("div", { class: "check-head" }, statusTag(c), el("b", {}, c.title)),
+    c.summary ? el("div", { class: "check-summary" }, c.summary) : null)));
+
+  renderBalance(v);
+
+  // charts: exactly the years each check judges
+  const grid = $("#v-charts");
+  const narrow = window.matchMedia("(max-width: 760px)").matches;
+  const colWidth = narrow ? grid.clientWidth : (grid.clientWidth - 18) / 2;
+  const byKey = Object.fromEntries(v.metrics.map((m) => [m.key, m]));
+  $("#v-charts-sub").textContent = "Je Kriterium die Kennzahl im Bewertungszeitraum " + period + (cur ? " · Beträge in Mio. " + cur : "") +
+    ". Die Linie markiert Buffetts Zielwert, wo es einen gibt.";
+  const charts = v.checks.filter((c) => byKey[c.metric]).map((c) => {
+    const m = byKey[c.metric];
+    const values = Object.fromEntries(v.check_years.map((y) => [String(y), m.values[String(y)]]));
+    const sub = (m.unit === "money" ? "Mio. " + cur + " · " : "") + c.rule;
+    return columnChart({ title: m.label, sub, years: v.check_years, values, unit: m.unit, width: colWidth,
+      threshold: c.threshold, badge: statusTag(c) });
+  }).filter(Boolean);
+  grid.replaceChildren(...charts);
+
+  // files and the table view
+  const head = el("tr", {}, el("th", {}, "GJ"), el("th", {}, "Dokument"), el("th", {}, "Sprache"), el("th", {}, "Größe"),
+    el("th", {}, "Übernommene Werte"), el("th", {}, ""));
+  const rows = v.documents.map((d) => {
+    const url = withToken("/api/documents/" + d.id + "/file");
+    return el("tr", {}, el("td", {}, d.fy_label || d.fiscal_year || "–"),
+      el("td", {}, el("div", {}, (state.meta && state.meta.categories[d.category]) || d.category), el("div", { class: "muted small" }, d.title || "")),
+      el("td", {}, (d.language || "").toUpperCase()), el("td", { class: "nowrap" }, fmtSize(d.size)),
+      el("td", {}, d.figures ? String(d.figures) : "–"),
+      el("td", { class: "nowrap" }, el("a", { href: url, target: "_blank", rel: "noopener" }, "Öffnen")));
+  });
+  $("#v-docs").replaceChildren(el("thead", {}, head), el("tbody", {}, rows));
+  const years = v.years;
+  const thead = el("tr", {}, el("th", {}, "Kennzahl"), years.map((y) => el("th", {}, String(y))), el("th", {}, "Quelle"));
+  const tbody = v.metrics.map((m) => {
+    const sources = [...new Set(Object.values(m.sources || {}))];
+    return el("tr", {}, el("td", {}, m.label + (m.unit === "money" ? " (Mio. " + cur + ")" : m.unit === "per_share" ? " (" + cur + ")" : "")),
+      years.map((y) => el("td", { title: (m.sources || {})[String(y)] || "" }, fmtMetric(m.values[String(y)], m.unit))),
+      el("td", { class: "muted small" }, sources.join(", ")));
+  });
+  $("#v-table").replaceChildren(el("thead", {}, thead), el("tbody", {}, tbody));
+}
+
+function renderBalance(v) {
+  const box = $("#v-balance");
+  const b = v.balance;
+  $("#v-bal-title").textContent = "Bilanz" + (v.year ? " " + v.year : "");
+  if (!b) { box.replaceChildren(el("p", { class: "muted" }, "Keine Bilanzdaten.")); $("#v-bal-note").textContent = ""; return; }
+  const cur = v.currency || "";
+  const W = Math.max(280, box.clientWidth || 480), barH = 30, rowGap = 56, top = 22, gap = 2;
+  const groups = [["Vermögen", b.assets], ["Kapital", b.capital]];
+  const H = top + groups.length * rowGap - (rowGap - barH) + 4;
+  const chart = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart balance", role: "img",
+    "aria-label": "Bilanzstruktur " + (v.year || "") });
+  const wrap = el("div", { class: "chart-wrap" }, chart);
+  const legends = [];
+  groups.forEach(([name, parts], gi) => {
+    const y0 = top + gi * rowGap;
+    chart.append(svg("text", { x: 0, y: y0 - 7, class: "label" }, name + " · " + fmtMetric(b.total, "money") + " Mio. " + cur));
+    let x = 0;
+    const visible = parts.filter((p) => p.value > 0);
+    visible.forEach((p, i) => {
+      const last = i === visible.length - 1;
+      const full = (p.value / b.total) * W;
+      const w = Math.max(1, full - (last ? 0 : gap));
+      const shade = BALANCE_SHADE[p.key] || "mid";
+      const r = last ? Math.min(4, w / 2) : 0;  // rounded data end, square at the baseline
+      const d = `M${x},${y0}H${x + w - r}Q${x + w},${y0} ${x + w},${y0 + r}V${y0 + barH - r}Q${x + w},${y0 + barH} ${x + w - r},${y0 + barH}H${x}Z`;
+      const seg = svg("path", { d, class: "seg " + shade });
+      chart.append(seg);
+      const pct = NF0.format((p.value / b.total) * 100) + " %";
+      if (w >= 44) chart.append(svg("text", { x: x + w / 2, y: y0 + barH / 2 + 4, "text-anchor": "middle", class: "seg-label " + shade }, pct));
+      const hit = svg("rect", { x, y: y0 - 2, width: full, height: barH + 4, class: "hit", tabindex: 0,
+        "aria-label": p.label + ": " + fmtMetric(p.value, "money") + " Mio. " + cur + " (" + pct + ")" });
+      chart.append(hit);
+      attachTooltip(wrap, chart, hit, seg, [fmtMetric(p.value, "money") + " Mio. " + cur, p.label + " · " + pct + " der Bilanzsumme"], [x + w / 2, y0]);
+      x += full;
+    });
+    legends.push(el("ul", { class: "legend" }, el("li", { class: "legend-title" }, name), visible.map((p) => el("li", {},
+      el("span", { class: "swatch " + (BALANCE_SHADE[p.key] || "mid") }), p.label,
+      el("span", { class: "legend-value" }, fmtMetric(p.value, "money"))))));
+  });
+  box.replaceChildren(wrap, el("div", { class: "legends" }, legends));
+  const note = $("#v-bal-note");
+  if (b.coverage) {
+    const ok = b.coverage >= 1;
+    note.replaceChildren(el("span", { class: "tag " + (ok ? "ok" : "warn") }, (ok ? "✓ " : "! ") + (ok ? "gedeckt" : "Lücke")),
+      " Langfristiges Vermögen ist zu " + NF0.format(b.coverage * 100) + " % durch Eigenkapital und langfristige Schulden finanziert" +
+      (ok ? " (goldene Bilanzregel erfüllt)." : " – ein Teil wird kurzfristig finanziert."));
+  } else note.textContent = "";
 }
 
 // --- gaps and wrong documents -----------------------------------------------------------------
@@ -897,6 +1075,7 @@ async function init() {
     try { renderFinancials(await api("POST", "/api/companies/" + state.company.lei + "/financials")); } catch (err) { toast(err.message, "error"); }
   });
   $("#i-metric").addEventListener("change", () => renderCompare());
+  $("#v-company").addEventListener("change", (e) => loadValue(e.target.value));
   $("#f-go").addEventListener("click", runFulltext);
   $("#f-q").addEventListener("keydown", (e) => { if (e.key === "Enter") runFulltext(); });
   try {
@@ -916,6 +1095,7 @@ async function init() {
     resizeTimer = setTimeout(() => {
       if (state.fin && $("#c-charts").clientWidth > 0) renderFinancials(state.fin);
       if (state.compare && $("#i-chart").clientWidth > 0) renderCompare();
+      if (state.value && $("#v-charts").clientWidth > 0) renderValue(state.value);
     }, 200);
   });
 }

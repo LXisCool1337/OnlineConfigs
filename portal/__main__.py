@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 import webbrowser
@@ -84,6 +85,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("figures", help="Kennzahlen aus den ESEF-Berichten anzeigen (neu berechnen)")
     p.add_argument("query", help="Name, ISIN oder LEI")
     p.add_argument("--csv", choices=["de", "en"], help="als CSV ausgeben")
+
+    p = sub.add_parser("import-figures", help="Kennzahlen aus PDF-Berichten importieren (CSV)")
+    p.add_argument("query", help="Name, ISIN oder LEI")
+    p.add_argument("csv", help="CSV mit Spalten metric;fiscal_year;value;report_year;page")
+    p.add_argument("--millions", action="store_true", help="Beträge in der CSV sind in Millionen")
+    p.add_argument("--currency", default="EUR")
 
     sub.add_parser("index", help="Volltext indizieren und Kennzahlen neu berechnen")
 
@@ -168,6 +175,22 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     cells.append(f"{v / 1e6:>11,.1f}")
             print(f"{m['label'][:27]:28}" + "".join(cells))
+        return 0
+
+    if args.command == "import-figures":
+        try:
+            company = Resolver(app.context(echo=echo)).resolve(query=args.query)
+            with open(args.csv, encoding="utf-8-sig", newline="") as fh:
+                text = fh.read()
+            lines = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+            rows = list(csv.DictReader(lines, delimiter=";" if ";" in lines[0] else ","))
+            count = financials.import_manual(app.db, company["lei"], rows, currency=args.currency,
+                                             millions=args.millions)
+        except (NotFound, OSError, IndexError, ValueError) as err:
+            print(f"Import fehlgeschlagen: {err}")
+            return 1
+        financials.extract(app.context(echo=echo), company["lei"])
+        print(f"{count} Werte für {company['name']} importiert")
         return 0
 
     if args.command == "grep":

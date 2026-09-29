@@ -226,6 +226,41 @@ def make_handler(app):
         h.send_text(financials.csv_for(app.db, m["lei"], "en" if style == "en" else "de"),
                     f"kennzahlen_{record['name']}_{m['lei']}.csv", bom=style != "en")
 
+    @route("GET", r"/api/value/companies")
+    def value_companies(h, m):
+        return {"companies": app.db.query(
+            "SELECT c.lei, c.name, c.country, (SELECT COUNT(DISTINCT f.fiscal_year) FROM financials f "
+            "WHERE f.lei = c.lei) AS figure_years, (SELECT COUNT(*) FROM documents d WHERE d.lei = c.lei "
+            "AND d.scope = 'company') AS documents FROM companies c WHERE EXISTS (SELECT 1 FROM documents d "
+            "WHERE d.lei = c.lei AND d.scope = 'company') OR EXISTS (SELECT 1 FROM financials f "
+            "WHERE f.lei = c.lei) ORDER BY figure_years = 0, c.name")}
+
+    @route("GET", r"/api/companies/(?P<lei>[A-Z0-9]{20})/value")
+    def company_value(h, m):
+        if not app.db.company(m["lei"]):
+            raise ApiError(404, "Unternehmen unbekannt")
+        return financials.value_view(app.db, m["lei"])
+
+    @route("POST", r"/api/companies/(?P<lei>[A-Z0-9]{20})/figures")
+    def company_figures_import(h, m):
+        """Key figures read from PDF reports, for companies without (complete) ESEF data."""
+        if not app.db.company(m["lei"]):
+            raise ApiError(404, "Unternehmen unbekannt")
+        body = h.json_body()
+        rows = body.get("rows")
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows) or len(rows) > 5000:
+            raise ApiError(400, "rows: Liste von Objekten erwartet")
+        currency = str(body.get("currency") or "EUR")
+        if not re.fullmatch(r"[A-Za-z]{3}", currency):
+            raise ApiError(400, "currency: dreistelliger Währungscode erwartet")
+        try:
+            count = financials.import_manual(app.db, m["lei"], rows, currency=currency,
+                                             millions=bool(body.get("millions")))
+        except ValueError as err:
+            raise ApiError(400, str(err)) from None
+        financials.extract(app.context(), m["lei"])
+        return {"imported": count, **financials.value_view(app.db, m["lei"])}
+
     @route("GET", r"/api/industries/(?P<nace>[0-9.]{2,5})/compare")
     def industry_compare(h, m):
         nace = normalize_nace(m["nace"])

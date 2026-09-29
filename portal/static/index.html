@@ -20,6 +20,7 @@
     <nav class="tabs" role="tablist" aria-label="Bereiche">
       <button role="tab" data-tab="overview" aria-selected="true">Übersicht</button>
       <button role="tab" data-tab="company">Unternehmen</button>
+      <button role="tab" data-tab="value">Bilanz &amp; Value</button>
       <button role="tab" data-tab="industry">Branchen</button>
       <button role="tab" data-tab="fulltext">Volltext</button>
       <button role="tab" data-tab="jobs">Aufträge <span id="jobs-badge" class="badge" hidden></span></button>
@@ -154,6 +155,57 @@
           <h3>Dokumente</h3>
           <div class="scroll-x"><table id="c-docs" class="docs"></table></div>
           <p id="c-docs-empty" class="muted">Noch keine Dokumente. Starte einen Abruf.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bilanz & Value -->
+    <section id="tab-value" class="tab" role="tabpanel" hidden>
+      <div class="card">
+        <div class="row between">
+          <label class="grow">Unternehmen<select id="v-company"></select></label>
+        </div>
+        <p id="v-empty" class="muted" hidden>Noch keine Unternehmen mit Dokumenten. Unter <b>Unternehmen</b> einen Abruf starten.</p>
+      </div>
+      <div id="v-body" hidden>
+        <div class="card">
+          <div class="row between">
+            <div>
+              <h2 id="v-name"></h2>
+              <p id="v-sub" class="muted small"></p>
+            </div>
+          </div>
+          <div id="v-kpis" class="stats kpis"></div>
+          <p id="v-nodata" class="muted" hidden></p>
+        </div>
+
+        <div id="v-top" class="grid2 top value-top">
+          <div class="card">
+            <h3>Buffett-Check</h3>
+            <p id="v-check-sub" class="muted small"></p>
+            <ul id="v-checks" class="checks-list"></ul>
+          </div>
+          <div class="card">
+            <h3 id="v-bal-title">Bilanz</h3>
+            <p class="muted small">Vermögen nach Bindungsdauer, Kapital nach Fristigkeit: von links langfristig nach rechts kurzfristig.</p>
+            <div id="v-balance"></div>
+            <p id="v-bal-note" class="small"></p>
+          </div>
+        </div>
+
+        <div id="v-charts-card" class="card">
+          <h3>Value-Kennzahlen</h3>
+          <p id="v-charts-sub" class="muted small"></p>
+          <div id="v-charts" class="charts value-charts"></div>
+        </div>
+
+        <div class="card">
+          <h3>Geladene Dateien</h3>
+          <div class="scroll-x"><table id="v-docs" class="docs"></table></div>
+          <details>
+            <summary>Alle Werte mit Quelle</summary>
+            <div class="scroll-x"><table id="v-table" class="docs fin"></table></div>
+          </details>
         </div>
       </div>
     </section>
