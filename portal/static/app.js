@@ -830,6 +830,7 @@ function renderValue(v) {
   $("#v-kpis").replaceChildren(...v.kpis.map((k) => kpiTile(k, cur)));
   $("#v-top").hidden = !hasData;
   $("#v-charts-card").hidden = !hasData;
+  $("#v-table").closest("details").hidden = !hasData;
 
   // Buffett check
   const period = v.check_years.length ? "GJ " + v.check_years[0] + "–" + v.check_years[v.check_years.length - 1] : "";
