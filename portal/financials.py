@@ -42,6 +42,8 @@ METRICS = [
       "ifrs-full:DividendsPaidToEquityHoldersOfParentClassifiedAsFinancingActivities"]),
     ("total_assets", "Bilanzsumme", "instant", "money", ["ifrs-full:Assets"]),
     ("equity", "Eigenkapital", "instant", "money", ["ifrs-full:Equity"]),
+    ("equity_parent", "Eigenkapital der Aktionäre", "instant", "money",
+     ["ifrs-full:EquityAttributableToOwnersOfParent"]),
     ("cash", "Zahlungsmittel", "instant", "money", ["ifrs-full:CashAndCashEquivalents"]),
     ("liabilities", "Schulden", "instant", "money", ["ifrs-full:Liabilities"]),
 ]
@@ -58,7 +60,7 @@ LABELS = {m[0]: m[1] for m in METRICS} | {d[0]: d[1] for d in DERIVED}
 UNITS = {m[0]: m[3] for m in METRICS} | {d[0]: d[2] for d in DERIVED}
 ORDER = ["revenue", "revenue_growth", "gross_profit", "ebit", "ebit_margin", "ebt", "net_income", "net_income_parent",
          "net_margin", "eps", "d_and_a", "operating_cash_flow", "capex", "capex_intangibles", "fcf", "fcf_margin",
-         "dividends_paid", "total_assets", "equity", "equity_ratio", "roe", "cash", "liabilities"]
+         "dividends_paid", "total_assets", "equity", "equity_parent", "equity_ratio", "roe", "cash", "liabilities"]
 CONCEPTS = {concept: (key, kind, rank) for key, _l, kind, _u, concepts in METRICS
             for rank, concept in enumerate(concepts)}
 
@@ -195,11 +197,15 @@ def derive(values: dict[int, dict[str, float]]) -> None:
                 v["fcf_margin"] = v["fcf"] / rev
         if v.get("equity") and v.get("total_assets"):
             v["equity_ratio"] = v["equity"] / v["total_assets"]
-        income = v.get("net_income_parent", v.get("net_income"))
-        if income is not None and v.get("equity"):
-            base = (v["equity"] + prev["equity"]) / 2 if prev.get("equity") else v["equity"]
-            if base > 0:
-                v["roe"] = income / base
+        # Profit and equity from the same group of owners: attributable to shareholders if both are
+        # tagged, otherwise group totals (incl. minorities); the mix is only the last resort.
+        for income_key, equity_key in (("net_income_parent", "equity_parent"), ("net_income", "equity"),
+                                       ("net_income_parent", "equity")):
+            if v.get(income_key) is not None and v.get(equity_key):
+                base = (v[equity_key] + prev[equity_key]) / 2 if prev.get(equity_key) else v[equity_key]
+                if base > 0:
+                    v["roe"] = v[income_key] / base
+                break
 
 
 def extract(ctx, lei: str) -> dict:

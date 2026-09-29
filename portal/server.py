@@ -6,13 +6,14 @@ header is checked (blocks DNS rebinding), and an access token can be required wh
 
 from __future__ import annotations
 
+import hmac
 import json
 import mimetypes
 import re
+import sqlite3
 import time
-from datetime import datetime, timezone
 import traceback
-from datetime import date
+from datetime import date, datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlsplit
 
@@ -41,6 +42,15 @@ class ApiError(Exception):
     def __init__(self, status: int, message: str):
         super().__init__(message)
         self.status = status
+
+
+def _int(value, name: str, default: int | None = None) -> int | None:
+    """A whole number from a query string or JSON body; 400 instead of a crash for anything else."""
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool) or not re.fullmatch(r"-?\d{1,9}", str(value).strip()):
+        raise ApiError(400, f"{name}: ganze Zahl erwartet")
+    return int(value)
 
 
 def make_handler(app):
@@ -100,6 +110,14 @@ def make_handler(app):
     @route("PATCH", r"/api/companies/(?P<lei>[A-Z0-9]{20})")
     def company_update(h, m):
         body = h.json_body()
+        for key in ("ir_url", "website", "nace", "keywords"):
+            value = body.get(key)
+            if key == "nace" and isinstance(value, int) and not isinstance(value, bool):
+                value = str(value)  # {"nace": 28}
+            if value is not None and not isinstance(value, str):
+                raise ApiError(400, f"{key}: Text erwartet")
+            if key in body:
+                body[key] = value.strip() if value is not None else None
         if "nace" in body and body["nace"]:
             nace = normalize_nace(body["nace"])
             if not nace:
@@ -224,8 +242,8 @@ def make_handler(app):
         get = lambda k: (h.query.get(k) or [None])[0]  # noqa: E731
         try:
             hits = fulltext.search(app.db, q, lei=get("lei"), nace=normalize_nace(get("nace")) if get("nace") else None,
-                                   year_from=get("from"), year_to=get("to"))
-        except Exception as err:  # noqa: BLE001 - malformed query reaching FTS5
+                                   year_from=_int(get("from"), "from"), year_to=_int(get("to"), "to"))
+        except sqlite3.OperationalError as err:  # malformed query reaching FTS5
             raise ApiError(400, f"Suchanfrage nicht verstanden: {err}") from None
         names = {}
         for hit in hits:
@@ -251,19 +269,19 @@ def make_handler(app):
             r["category_label"] = CATEGORY_LABELS.get(r["category"], r["category"])
         gaps = []
         today = date.today()
-        for c in db.library_companies():
-            docs = db.company_documents(c["lei"])
+        docs_by_lei: dict[str, list[dict]] = {}
+        for d in db.query("SELECT d.lei, d.category, d.fiscal_year, c.name FROM documents d "
+                          "JOIN companies c ON c.lei = d.lei WHERE d.scope = 'company'"):
+            docs_by_lei.setdefault(d["lei"], []).append(d)
+        for lei, docs in docs_by_lei.items():
             found = {d["fiscal_year"] for d in docs if d["fiscal_year"]}
             cov = compute_coverage(docs, final_window(found, app.settings.years, today))
             if cov["missing"]:
-                gaps.append({"lei": c["lei"], "name": c["name"], "covered": cov["covered"], "target": cov["target"],
+                gaps.append({"lei": lei, "name": docs[0]["name"], "covered": cov["covered"], "target": cov["target"],
                              "missing": cov["missing"]})
-        gaps.sort(key=lambda g: g["covered"])
-        watch = []
-        for c in db.query("SELECT * FROM companies WHERE watch = 1 ORDER BY name"):
-            latest = db.one("SELECT MAX(fiscal_year) AS y FROM documents WHERE lei = ? AND scope = 'company'",
-                            (c["lei"],))
-            watch.append({"lei": c["lei"], "name": c["name"], "latest": latest["y"] if latest else None})
+        gaps.sort(key=lambda g: (g["covered"], g["name"]))
+        watch = db.query("SELECT c.lei, c.name, (SELECT MAX(d.fiscal_year) FROM documents d WHERE d.lei = c.lei "
+                         "AND d.scope = 'company') AS latest FROM companies c WHERE c.watch = 1 ORDER BY c.name")
         nxt = app.jobs.next_auto_refresh()
         return {"stats": stats, "recent": recent, "gaps": gaps[:12],
                 "active": db.query("SELECT id, kind, title, status, progress, stage FROM jobs "
@@ -282,13 +300,15 @@ def make_handler(app):
         body = h.json_body()
         kind = body.get("kind")
         params = body.get("params") or {}
+        if not isinstance(params, dict):
+            raise ApiError(400, "params: JSON-Objekt erwartet")
         if kind not in ("company", "industry", "batch", "refresh", "universe", "index"):
             raise ApiError(400, "Unbekannter Auftragstyp")
         if kind == "company" and not (params.get("lei") or params.get("query")):
             raise ApiError(400, "Bitte ein Unternehmen wählen")
         if kind == "industry" and not normalize_nace(params.get("nace")):
             raise ApiError(400, "Bitte einen gültigen NACE-Code wählen")
-        if kind == "batch" and int(params.get("limit") or 50) > 500 and not params.get("confirm_large"):
+        if kind == "batch" and (_int(params.get("limit"), "limit") or 50) > 500 and not params.get("confirm_large"):
             raise ApiError(400, "Mehr als 500 Unternehmen: bitte ausdrücklich bestätigen")
         return {"id": app.jobs.submit(kind, params, title=body.get("title"))}
 
@@ -297,7 +317,7 @@ def make_handler(app):
         job = app.db.job(int(m["job"]))
         if not job:
             raise ApiError(404, "Auftrag nicht gefunden")
-        after = int((h.query.get("after") or ["0"])[0] or 0)
+        after = _int((h.query.get("after") or [None])[0], "after", 0)
         return {"job": job, "events": app.db.job_events(job["id"], after=after)}
 
     @route("POST", r"/api/jobs/(?P<job>\d+)/cancel")
@@ -306,7 +326,7 @@ def make_handler(app):
 
     @route("GET", r"/api/jobs/(?P<job>\d+)/stream")
     def job_stream(h, m):
-        h.stream_job(int(m["job"]), int((h.query.get("after") or ["0"])[0] or 0))
+        h.stream_job(int(m["job"]), _int((h.query.get("after") or [None])[0], "after", 0))
 
     @route("GET", r"/api/universe")
     def universe(h, m):
@@ -351,7 +371,10 @@ def make_handler(app):
             header = self.headers.get("Authorization", "")
             given = header[7:] if header.startswith("Bearer ") else (self.query.get("token") or [""])[0]
             cookie = re.search(r"(?:^|;\s*)portal_token=([^;]+)", self.headers.get("Cookie", ""))
-            return given == token or (cookie is not None and cookie.group(1) == token)
+            expected = token.encode("utf-8")
+            # compare_digest: the time taken does not reveal how many leading characters were right
+            return hmac.compare_digest(given.encode("utf-8"), expected) or (
+                cookie is not None and hmac.compare_digest(cookie.group(1).encode("utf-8"), expected))
 
         def _dispatch(self, method: str) -> None:
             parts = urlsplit(self.path)
@@ -408,7 +431,10 @@ def make_handler(app):
         # --- helpers --------------------------------------------------------------------
 
         def json_body(self) -> dict:
-            length = int(self.headers.get("Content-Length") or 0)
+            raw_length = (self.headers.get("Content-Length") or "0").strip()
+            if not re.fullmatch(r"[0-9]{1,12}", raw_length):  # "-1" would block reading until the client hangs up
+                raise ApiError(400, "Ungültige Content-Length")
+            length = int(raw_length)
             if length > 1_000_000:
                 raise ApiError(413, "Anfrage zu groß")
             try:

@@ -89,7 +89,7 @@ class WebSearch:
                          limit: int = 10, today: date | None = None) -> list[Candidate]:
         queries = [f'"{label_en}" industry report Europe filetype:pdf',
                    f'"{label_de}" Branchenbericht filetype:pdf',
-                   f'"{label_en}" market outlook {date.today().year - 1} filetype:pdf']
+                   f'"{label_en}" market outlook {(today or date.today()).year - 1} filetype:pdf']
         queries += [f'"{kw}" industry report filetype:pdf' for kw in keywords[:2]]
         seen, out = set(), []
         for query in queries:

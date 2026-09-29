@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
+import threading
 import unicodedata
 import zipfile
 from pathlib import Path
@@ -32,10 +34,19 @@ class Library:
     def __init__(self, root: str | Path):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self._reserve_lock = threading.Lock()
+        self._reserved: set[Path] = set()
 
     def company_dir(self, company: dict) -> Path:
+        """The company's folder. An existing folder for the LEI is reused, so a changed name or country
+        (GLEIF rename, universe sync) does not split the documents over two folders."""
+        lei = company["lei"]
+        if re.fullmatch(r"[A-Z0-9]{20}", lei or ""):
+            existing = sorted(p for p in (self.root / "companies").glob(f"*/*_{lei}") if p.is_dir())
+            if existing:
+                return existing[0]
         country = (company.get("country") or "XX").upper()
-        return self.root / "companies" / country / f"{slugify(company.get('name') or '', 50)}_{company['lei']}"
+        return self.root / "companies" / country / f"{slugify(company.get('name') or '', 50)}_{lei}"
 
     def industry_dir(self, nace: str) -> Path:
         return self.root / "industries" / f"nace-{nace.replace('.', '')}"
@@ -45,15 +56,20 @@ class Library:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    @staticmethod
-    def unique(path: Path) -> Path:
-        if not path.exists():
-            return path
-        for n in range(2, 1000):
-            candidate = path.with_name(f"{path.stem}_{n}{path.suffix}")
-            if not candidate.exists():
-                return candidate
+    def reserve(self, path: Path) -> Path:
+        """A free file name (``path``, else name_2, name_3, …), safe across download threads: a returned
+        path is handed out only once until ``release``, so parallel downloads never share a (.part) file."""
+        with self._reserve_lock:
+            for n in range(1, 1000):
+                candidate = path if n == 1 else path.with_name(f"{path.stem}_{n}{path.suffix}")
+                if candidate not in self._reserved and not candidate.exists():
+                    self._reserved.add(candidate)
+                    return candidate
         raise FileExistsError(path)
+
+    def release(self, path: Path) -> None:
+        with self._reserve_lock:
+            self._reserved.discard(path)
 
     def relative(self, path: Path) -> str:
         return Path(path).resolve().relative_to(self.root).as_posix()
@@ -70,7 +86,8 @@ class Library:
         entries = []
         for doc in documents:
             entries.append({
-                "file": Path(self.absolute(doc["path"])).relative_to(directory).as_posix() if doc.get("path") else None,
+                "file": Path(os.path.relpath(self.absolute(doc["path"]), directory)).as_posix() if doc.get("path")
+                else None,
                 "category": doc.get("category"),
                 "fiscal_year": doc.get("fiscal_year"),
                 "fy_label": doc.get("fy_label"),
@@ -94,13 +111,18 @@ class Library:
     def build_zip(self, directory: Path, name: str) -> Path:
         """Pack a company or industry folder into library/exports/<name>.zip."""
         target = self.exports_dir() / f"{slugify(name, 80)}.zip"
-        tmp = target.with_suffix(".zip.tmp")
-        with zipfile.ZipFile(tmp, "w") as zf:
-            for path in sorted(directory.rglob("*")):
-                if not path.is_file() or path.name.endswith((".part", ".tmp")):
-                    continue
-                method = zipfile.ZIP_STORED if path.suffix.lower() in STORED_TYPES else zipfile.ZIP_DEFLATED
-                zf.write(path, arcname=f"{directory.name}/{path.relative_to(directory).as_posix()}",
-                         compress_type=method)
-        os.replace(tmp, target)
+        # A temp file of its own per call: two simultaneous exports must not write into the same file.
+        fd, tmp_name = tempfile.mkstemp(prefix=target.stem + ".", suffix=".zip.tmp", dir=target.parent)
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as fh, zipfile.ZipFile(fh, "w") as zf:
+                for path in sorted(directory.rglob("*")):
+                    if not path.is_file() or path.name.endswith((".part", ".tmp")):
+                        continue
+                    method = zipfile.ZIP_STORED if path.suffix.lower() in STORED_TYPES else zipfile.ZIP_DEFLATED
+                    zf.write(path, arcname=f"{directory.name}/{path.relative_to(directory).as_posix()}",
+                             compress_type=method)
+            os.replace(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
         return target

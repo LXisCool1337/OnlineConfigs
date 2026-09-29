@@ -348,10 +348,12 @@ class Database:
             self._conn.execute("INSERT OR REPLACE INTO doc_index (doc_id, chunks, status, indexed_at) "
                                "VALUES (?, ?, ?, ?)", (doc_id, len(chunks), status, now_iso()))
 
-    def unindexed_documents(self, lei: str | None = None, nace: str | None = None) -> list[dict]:
+    def unindexed_documents(self, lei: str | None = None, nace: str | None = None,
+                            retry_no_extractor: bool = True) -> list[dict]:
+        """Documents without full text; ``retry_no_extractor`` also returns PDFs skipped for lack of pdftotext."""
+        pending = "(i.doc_id IS NULL OR i.status = 'no_extractor')" if retry_no_extractor else "i.doc_id IS NULL"
         sql = ("SELECT d.* FROM documents d LEFT JOIN doc_index i ON i.doc_id = d.id "
-               "WHERE (i.doc_id IS NULL OR i.status = 'no_extractor') AND d.path IS NOT NULL "
-               "AND d.mime IN ('pdf', 'xhtml', 'html')")
+               f"WHERE {pending} AND d.path IS NOT NULL AND d.mime IN ('pdf', 'xhtml', 'html')")
         params: list = []
         if lei:
             sql += " AND d.lei = ?"
@@ -388,13 +390,18 @@ class Database:
         return self.query("SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,))
 
     def claim_job(self) -> dict | None:
+        """Take the oldest queued job. The conditional UPDATE keeps this safe even when a second process
+        (the CLI next to the server) works on the same database."""
         with self._lock:
-            row = self.one("SELECT * FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1")
-            if row:
-                self._conn.execute("UPDATE jobs SET status = 'running', started_at = ? WHERE id = ?",
-                                   (now_iso(), row["id"]))
-                row["status"] = "running"
-            return row
+            while True:
+                row = self.one("SELECT * FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1")
+                if row is None:
+                    return None
+                claimed = self._conn.execute("UPDATE jobs SET status = 'running', started_at = ? "
+                                             "WHERE id = ? AND status = 'queued'", (now_iso(), row["id"])).rowcount
+                if claimed:
+                    row["status"] = "running"
+                    return row
 
     def update_job(self, job_id: int, **values) -> None:
         if not values:
@@ -402,10 +409,20 @@ class Database:
         cols = ", ".join(f"{k} = ?" for k in values)
         self.execute(f"UPDATE jobs SET {cols} WHERE id = ?", [_encode(v) for v in values.values()] + [job_id])
 
-    def requeue_interrupted(self) -> int:
+    def transition_job(self, job_id: int, from_status: tuple[str, ...], **values) -> bool:
+        """Update a job only while it is in one of ``from_status``; False if it moved on in the meantime."""
+        cols = ", ".join(f"{k} = ?" for k in values)
+        marks = ", ".join("?" for _ in from_status)
         with self._lock:
-            return self._conn.execute("UPDATE jobs SET status = 'queued' WHERE status IN ('running', 'cancelling')"
-                                      ).rowcount
+            return self._conn.execute(f"UPDATE jobs SET {cols} WHERE id = ? AND status IN ({marks})",
+                                      [_encode(v) for v in values.values()] + [job_id, *from_status]).rowcount > 0
+
+    def requeue_interrupted(self) -> int:
+        """After a restart: running jobs are queued again, jobs that were being cancelled stay cancelled."""
+        with self._lock:
+            self._conn.execute("UPDATE jobs SET status = 'cancelled', stage = 'Abgebrochen', finished_at = ? "
+                               "WHERE status = 'cancelling'", (now_iso(),))
+            return self._conn.execute("UPDATE jobs SET status = 'queued' WHERE status = 'running'").rowcount
 
     def add_event(self, job_id: int, level: str, message: str, data: dict | None = None) -> int:
         return self.execute("INSERT INTO job_events (job_id, ts, level, message, data) VALUES (?, ?, ?, ?, ?)",

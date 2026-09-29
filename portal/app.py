@@ -26,7 +26,7 @@ class App:
     def __init__(self, settings: Settings, echo=None):
         self.settings = settings
         self.db = Database(settings.db_file)
-        settings.apply(self.db.load_settings(), only=UI_KEYS)
+        settings.apply(self.db.load_settings(), only=UI_KEYS, skip_invalid=True)
         self.library = Library(settings.library_dir)
         self.http = HttpClient(settings)
         self.jobs = JobRunner(self, echo=echo)
@@ -105,26 +105,38 @@ class JobRunner:
         return job_id
 
     def cancel(self, job_id: int) -> bool:
-        job = self.app.db.job(job_id)
-        if not job:
+        """Cancel a queued or running job, together with the queued jobs a batch job has spawned.
+
+        The status changes are conditional, so a job that finishes or starts at the same moment is never
+        left behind as 'cancelling' (and re-run after a restart) or run while marked 'cancelled'."""
+        db = self.app.db
+        if not db.job(job_id):
             return False
-        if job["status"] == "queued":
-            self.app.db.update_job(job_id, status="cancelled", finished_at=now_iso())
-            return True
-        if job["status"] == "running":
+        # Stop the job itself first, so a running batch queues no further children after the sweep below.
+        stopped = db.transition_job(job_id, ("queued",), status="cancelled", stage="Abgebrochen",
+                                    finished_at=now_iso())
+        if not stopped and db.transition_job(job_id, ("running",), status="cancelling"):
             self._cancel.setdefault(job_id, threading.Event()).set()
-            self.app.db.update_job(job_id, status="cancelling")
-            return True
-        return False
+            stopped = True
+        children = [r["id"] for r in db.query("SELECT id FROM jobs WHERE parent_id = ? AND status = 'queued'",
+                                              (job_id,))]
+        cancelled = sum(db.transition_job(child, ("queued",), status="cancelled", stage="Abgebrochen",
+                                          finished_at=now_iso()) for child in children)
+        return stopped or cancelled > 0
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            job = self.app.db.claim_job()
-            if job is None:
-                self._wake.wait(1.0)
-                self._wake.clear()
-                continue
-            self.run(job)
+            try:
+                job = self.app.db.claim_job()
+                if job is None:
+                    self._wake.wait(1.0)
+                    self._wake.clear()
+                    continue
+                self.run(job)
+            except Exception as err:  # noqa: BLE001 - e.g. "database is locked": the worker must survive
+                if self.echo:
+                    self.echo("error", f"Auftragsverarbeitung: {err}", {})
+                self._stop.wait(5.0)
 
     def run(self, job: dict) -> dict:
         db = self.app.db

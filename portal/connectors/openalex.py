@@ -13,7 +13,7 @@ class OpenAlex:
 
     def studies(self, query: str, year_from: int, limit: int) -> list[Candidate]:
         s = self.ctx.settings
-        filters = [f"is_oa:true", f"from_publication_date:{year_from}-01-01"]
+        filters = ["is_oa:true", f"from_publication_date:{year_from}-01-01"]
         if s.openalex_types:
             filters.append(f"type:{s.openalex_types}")
         params = {"search": query, "filter": ",".join(filters), "per-page": min(max(limit * 2, 10), 100),

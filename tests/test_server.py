@@ -187,6 +187,24 @@ class ServerTests(unittest.TestCase):
         data = self.json("GET", f"/api/companies/{lei}/financials")
         self.assertEqual(data["years"], list(range(2019, 2026)))  # 2025 still comes from the ESEF package
 
+    def test_06_input_validation(self):
+        # A negative Content-Length used to block the handler until the client hung up.
+        resp, _ = self.request("POST", "/api/jobs", headers={"Content-Type": "application/json",
+                                                             "Content-Length": "-1"})
+        self.assertEqual(resp.status, 400)
+        self.json("POST", "/api/jobs", {"kind": "company", "params": ["x"]}, status=400)
+        self.json("POST", "/api/jobs", {"kind": "batch", "params": {"limit": "viele"}}, status=400)
+        self.json("GET", "/api/fulltext?q=Zoll&from=abc", status=400)
+        self.json("GET", "/api/fulltext?q=Zoll*%20*")                         # stray "*" is no FTS5 error
+        job_id = self.json("POST", "/api/jobs", {"kind": "index", "params": {}})["id"]
+        self.json("GET", f"/api/jobs/{job_id}?after=x", status=400)
+        self.json("PATCH", f"/api/companies/{COMPANY['lei']}", {"ir_url": ["https://x"]}, status=400)
+        before = self.app.settings.contact_email
+        self.json("PUT", "/api/settings", {"contact_email": "neu@example.org", "years": 99}, status=400)
+        self.json("PUT", "/api/settings", {"contact_email": "a@b.org\r\nX-Evil: 1"}, status=400)
+        self.assertEqual(self.app.settings.contact_email, before)             # nothing applied
+        self.wait_for(job_id)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -76,8 +76,8 @@ def pdf_pages(path) -> list[str] | None:
 
 def index_document(db, library, doc: dict) -> str:
     """Extract and index one document; returns 'ok', 'empty', 'no_extractor' or 'error'."""
-    path = library.absolute(doc["path"])
     try:
+        path = library.absolute(doc["path"])  # PermissionError (an OSError) for a path outside the library
         if doc["mime"] in ("xhtml", "html"):
             pieces = [(None, c) for c in chunks(html_text(path))]
         elif doc["mime"] == "pdf":
@@ -99,11 +99,8 @@ def index_document(db, library, doc: dict) -> str:
 
 def index_pending(ctx, lei: str | None = None, nace: str | None = None) -> dict:
     counts: dict[str, int] = {}
-    docs = ctx.db.unindexed_documents(lei=lei, nace=nace)
-    if not pdftotext_available():
-        # PDFs stay pending until pdftotext is installed; do not re-mark them on every run.
-        docs = [d for d in docs if d["mime"] != "pdf" or not ctx.db.one(
-            "SELECT 1 AS x FROM doc_index WHERE doc_id = ? AND status = 'no_extractor'", (d["id"],))]
+    # PDFs stay pending until pdftotext is installed; without it, do not re-mark them on every run.
+    docs = ctx.db.unindexed_documents(lei=lei, nace=nace, retry_no_extractor=pdftotext_available())
     for doc in docs:
         ctx.check_cancel()
         status = index_document(ctx.db, ctx.library, doc)
@@ -116,7 +113,11 @@ def index_pending(ctx, lei: str | None = None, nace: str | None = None) -> dict:
 
 
 def fts_query(text: str) -> str | None:
-    """User input -> safe FTS5 query: words AND-ed, "phrases" kept, word* as prefix, OR allowed."""
+    """User input -> safe FTS5 query: words AND-ed, "phrases" kept, word* as prefix, OR allowed.
+
+    A token that the tokenizer splits into several words (E-Mobilität, COVID-19, 2024/25) becomes a
+    phrase, so its parts must stand next to each other. A lone "*" or a doubled "**" never reaches FTS5.
+    """
     parts = []
     for token in re.findall(r'"[^"]+"|\S+', text or ""):
         if token == "OR" and parts and parts[-1] != "OR":
@@ -127,11 +128,9 @@ def fts_query(text: str) -> str | None:
             if inner:
                 parts.append(f'"{inner}"')
             continue
-        prefix = token.endswith("*")
-        for word in re.findall(r"\w+", token, re.UNICODE):
-            parts.append(f'"{word}"')
-        if prefix and parts and parts[-1] != "OR":
-            parts[-1] += "*"
+        words = re.findall(r"\w+", token, re.UNICODE)
+        if words:
+            parts.append(f'"{" ".join(words)}"' + ("*" if token.endswith("*") else ""))
     while parts and parts[-1] == "OR":
         parts.pop()
     return " ".join(parts) or None

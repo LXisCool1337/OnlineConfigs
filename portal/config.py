@@ -7,7 +7,9 @@ Precedence, lowest to highest: defaults, ``portal.toml`` in the repository root,
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import tomllib
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -59,6 +61,19 @@ UI_KEYS = (
     "auto_refresh_days",
 )
 SECRET_KEYS = ("brave_api_key", "access_token")
+
+# Allowed ranges and values; checked for every source (file, environment, web UI).
+LIMITS = {
+    "years": (1, 30), "peers_max": (0, 100), "peer_years": (1, 10), "openalex_max": (0, 100),
+    "curated_max_per_source": (0, 100), "auto_refresh_days": (0, 365), "default_rate": (0.0, 60.0),
+    "port": (0, 65535), "timeout": (1.0, 600.0), "retries": (0, 10), "backoff_base": (0.0, 60.0),
+    "max_file_mb": (1, 10_000), "crawl_max_pages": (1, 10_000), "crawl_max_depth": (0, 10),
+    "job_workers": (1, 32), "download_workers": (1, 32),
+}
+CHOICES = {"search_provider": {"", "brave", "searxng"}, "esef_formats": {"report", "package", "json"}}
+URL_KEYS = ("searxng_url", "gleif_api", "esef_api", "wikidata_sparql", "eurostat_api", "openalex_api",
+            "esma_firds_api", "brave_api")
+CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass
@@ -127,21 +142,46 @@ class Settings:
             data[key] = "********" if data.get(key) else ""
         return data
 
-    def apply(self, values: dict, *, only: tuple[str, ...] | None = None) -> list[str]:
-        """Apply overrides with type coercion; returns the keys that changed."""
-        known = {f.name: f for f in fields(self)}
-        changed = []
+    def apply(self, values: dict, *, only: tuple[str, ...] | None = None, skip_invalid: bool = False) -> list[str]:
+        """Apply overrides with type coercion and validation; returns the keys that changed.
+
+        All values are checked before the first one is set, so an invalid value (ValueError) leaves the
+        settings untouched. ``skip_invalid`` drops invalid values instead (used for stored UI values)."""
+        known = {f.name for f in fields(self)}
+        staged = {}
         for key, value in values.items():
             if key not in known or (only is not None and key not in only):
                 continue
             if key in SECRET_KEYS and value == "********":
                 continue  # masked value sent back unchanged by the UI
-            current = getattr(self, key)
-            new = _coerce(value, current)
-            if new != current:
+            try:
+                staged[key] = _validate(key, _coerce(value, getattr(self, key)))
+            except (ValueError, TypeError) as err:
+                if not skip_invalid:
+                    raise ValueError(f"{key}: {err}") from None
+        changed = []
+        for key, new in staged.items():
+            if new != getattr(self, key):
                 setattr(self, key, new)
                 changed.append(key)
         return changed
+
+
+def _validate(key: str, value):
+    if key in LIMITS:
+        lo, hi = LIMITS[key]
+        if not (math.isfinite(value) and lo <= value <= hi):
+            raise ValueError(f"erlaubt sind Werte von {lo} bis {hi}")
+    if key in CHOICES:
+        for item in value if isinstance(value, list) else [value]:
+            if item not in CHOICES[key]:
+                raise ValueError(f"„{item}“ ist nicht erlaubt ({', '.join(sorted(repr(c) for c in CHOICES[key]))})")
+    texts = value if isinstance(value, list) else [value] if isinstance(value, str) else []
+    if any(CONTROL_CHARS.search(t) for t in texts):
+        raise ValueError("Steuerzeichen (z. B. Zeilenumbrüche) sind nicht erlaubt")
+    if key in URL_KEYS and value and not re.match(r"^https?://", value, re.I):
+        raise ValueError("bitte vollständige URL mit http(s):// angeben")
+    return value
 
 
 def _coerce(value, default):
@@ -149,6 +189,8 @@ def _coerce(value, default):
         text = value.strip()
         if isinstance(default, bool):
             return text.lower() in ("1", "true", "yes", "ja", "on")
+        if isinstance(default, (int, float)) and not text:
+            return default  # an emptied number field keeps the current value
         if isinstance(default, int):
             return int(text)
         if isinstance(default, float):

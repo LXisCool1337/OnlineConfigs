@@ -23,8 +23,8 @@ Die Reiter:
 | **Übersicht** | Bestand, Speicher, zuletzt geladene Dokumente, Unternehmen mit Lücken, laufende Aufträge, Beobachtungsliste |
 | **Unternehmen** | Abruf, Abdeckung (fehlende Jahre per Klick ergänzen), **Kennzahlen aus den ESEF-Berichten** mit Diagrammen und Excel-Export, Dokumentliste („Falsch“ ersetzt ein Dokument beim nächsten Lauf durch die nächstbeste Quelle) |
 | **Branchen** | Branchenpaket, eigene Quellen, **Wettbewerbervergleich** (Margen, Wachstum, Eigenkapitalquote, ROE, Median) |
-| **Volltext** | Suche in allen Berichten: Wörter, „Phrasen“, Wortanfang* (Zoll* findet Zölle, Zollpolitik), Filter nach Unternehmen und Jahren |
-| **Aufträge**, **Bibliothek**, **Universum** | Auftragsprotokolle, Bestand, Katalog aller EU-Aktien und Stapelabruf |
+| **Volltext** | Suche in allen Berichten: Wörter, „Phrasen“, Wortanfang* (Zoll* findet Zölle, Zollpolitik), Bindestrich-Wörter wie E-Mobilität als Phrase, Filter nach Unternehmen und Jahren |
+| **Aufträge**, **Bibliothek**, **Universum** | Auftragsprotokolle, Bestand, Katalog aller EU-Aktien und Stapelabruf (Abbrechen eines Stapelauftrags stoppt auch seine noch wartenden Unternehmensaufträge) |
 | **Einstellungen** | Kontakt-E-Mail, Sprachen, Websuche und automatische Aktualisierung der Beobachtungsliste (alle N Tage) |
 
 ## Kommandozeile
@@ -46,7 +46,7 @@ python3 -m portal index                        # Volltext nachindizieren, Kennza
 
 ## Kennzahlen und Volltext
 
-Die Kennzahlen stammen direkt aus dem Inline-XBRL der ESEF-Berichte: Umsatz, EBIT, Jahresergebnis, Ergebnis je Aktie, Cashflow, Investitionen, Bilanz und daraus Margen, Free Cashflow, Eigenkapitalquote und ROE. Jeder Bericht enthält auch das Vorjahr, daher ergeben sechs Berichte sieben Jahre. Angezeigt werden die ursprünglich berichteten Werte; spätere Anpassungen erscheinen als Hinweis.
+Die Kennzahlen stammen direkt aus dem Inline-XBRL der ESEF-Berichte: Umsatz, EBIT, Jahresergebnis, Ergebnis je Aktie, Cashflow, Investitionen, Bilanz und daraus Margen, Free Cashflow, Eigenkapitalquote und ROE. Jeder Bericht enthält auch das Vorjahr, daher ergeben sechs Berichte sieben Jahre. Angezeigt werden die ursprünglich berichteten Werte; spätere Anpassungen erscheinen als Hinweis. Die Eigenkapitalrendite setzt Gewinn und Eigenkapital derselben Eigentümer ins Verhältnis: den Aktionären zurechenbar, wenn beides getaggt ist, sonst Konzern gesamt (inkl. Minderheiten).
 
 Die Volltextsuche deckt die ESEF-Berichte immer ab. PDFs werden durchsuchbar, sobald `pdftotext` installiert ist (Linux: `apt install poppler-utils`, macOS: `brew install poppler`, Windows: Poppler-Binaries in den PATH). Danach einmal `python3 -m portal index` ausführen.
 
@@ -63,7 +63,7 @@ library/portal.sqlite3
 
 ## Konfiguration
 
-Kopiere [`portal.example.toml`](../portal.example.toml) nach `portal.toml`, oder setze Umgebungsvariablen `PORTAL_<NAME>` (z. B. `PORTAL_CONTACT_EMAIL`). Die wichtigsten Werte lassen sich auch in der Oberfläche ändern. Die Websuche (Brave Search API oder eigenes SearXNG) ist optional und schließt Lücken bei älteren PDFs.
+Kopiere [`portal.example.toml`](../portal.example.toml) nach `portal.toml`, oder setze Umgebungsvariablen `PORTAL_<NAME>` (z. B. `PORTAL_CONTACT_EMAIL`). Die wichtigsten Werte lassen sich auch in der Oberfläche ändern. Alle Werte werden geprüft (z. B. Jahre 1–30, keine Zeilenumbrüche, URLs mit http(s)://); ein ungültiger Wert wird mit Fehlermeldung abgelehnt, ohne dass die übrigen übernommen werden. Die Websuche (Brave Search API oder eigenes SearXNG) ist optional und schließt Lücken bei älteren PDFs.
 
 Soll das Portal auf einer anderen Adresse als `127.0.0.1` laufen, muss `access_token` gesetzt sein. Der Aufruf erfolgt dann mit `?token=…`.
 

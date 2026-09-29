@@ -7,6 +7,7 @@ import hashlib
 import http.client
 import io
 import json
+import math
 import os
 import random
 import re
@@ -116,12 +117,15 @@ def _retry_after(headers) -> float | None:
     if not value:
         return None
     try:
-        return min(float(value), 120.0)
+        seconds = float(value)
     except ValueError:
         try:
-            return max(0.0, min(parsedate_to_datetime(value).timestamp() - time.time(), 120.0))
+            seconds = parsedate_to_datetime(value).timestamp() - time.time()
         except (TypeError, ValueError):
             return None
+    if not math.isfinite(seconds):
+        return None
+    return max(0.0, min(seconds, 120.0))  # time.sleep() refuses negative values
 
 
 def _read_capped(resp, limit: int, *, truncate: bool = False) -> bytes:
@@ -140,17 +144,24 @@ def _read_capped(resp, limit: int, *, truncate: bool = False) -> bytes:
     return b"".join(chunks)
 
 
+def _inflate(raw: bytes, wbits: int, limit: int) -> bytes:
+    return zlib.decompressobj(wbits).decompress(raw, limit + 1)  # bounded: no deflate bomb
+
+
 def _decode_body(raw: bytes, encoding: str, limit: int) -> bytes:
     encoding = (encoding or "").lower()
-    if encoding in ("gzip", "x-gzip"):
-        data = gzip.GzipFile(fileobj=io.BytesIO(raw)).read(limit + 1)
-    elif encoding == "deflate":
-        try:
-            data = zlib.decompress(raw)
-        except zlib.error:
-            data = zlib.decompress(raw, -zlib.MAX_WBITS)
-    else:
-        return raw
+    try:
+        if encoding in ("gzip", "x-gzip"):
+            data = gzip.GzipFile(fileobj=io.BytesIO(raw)).read(limit + 1)
+        elif encoding == "deflate":
+            try:
+                data = _inflate(raw, zlib.MAX_WBITS, limit)
+            except zlib.error:
+                data = _inflate(raw, -zlib.MAX_WBITS, limit)  # raw deflate without zlib header
+        else:
+            return raw
+    except (OSError, EOFError, zlib.error) as err:
+        raise ContentError(f"Antwort nicht dekomprimierbar ({encoding}): {err}") from None
     if len(data) > limit:
         raise ContentError(f"Antwort größer als {limit // 1_000_000} MB")
     return data
@@ -171,6 +182,10 @@ class HttpClient:
         self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
         self._robots_locks: dict[str, threading.Lock] = {}
         self.stats = {"requests": 0, "bytes": 0}
+
+    def _count(self, key: str, amount: int) -> None:
+        with self._guard:  # updated from several download threads at once
+            self.stats[key] += amount
 
     @property
     def user_agent(self) -> str:
@@ -235,7 +250,7 @@ class HttpClient:
             req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
             try:
                 resp = self._opener.open(req, timeout=timeout or self.s.timeout)
-                self.stats["requests"] += 1
+                self._count("requests", 1)
                 return resp
             except urllib.error.HTTPError as err:
                 retry_after = _retry_after(err.headers)
@@ -276,7 +291,7 @@ class HttpClient:
                 return Response(final, resp.status, header_map, b"")
             raw = _read_capped(resp, max_bytes, truncate=html_only)
         body = _decode_body(raw, header_map.get("content-encoding", ""), max_bytes)
-        self.stats["bytes"] += len(raw)
+        self._count("bytes", len(raw))
         return Response(final, resp.status, header_map, body)
 
     def get_json(self, url: str, *, params=None, headers: dict | None = None, timeout: float | None = None):
@@ -318,7 +333,7 @@ class HttpClient:
                 if expect and kind not in expect:
                     raise ContentError(f"unerwarteter Inhalt: {kind} ({ctype or 'ohne Content-Type'})")
                 os.replace(tmp, dest)
-                self.stats["bytes"] += size
+                self._count("bytes", size)
                 return Download(final, dest, size, digest.hexdigest(), kind, ctype)
             except (http.client.IncompleteRead, ConnectionError, socket.timeout, TimeoutError) as err:
                 if attempt == 1:

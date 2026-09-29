@@ -180,7 +180,7 @@ def _fetch_one(ctx, cand: Candidate, *, scope: str, base_dir: Path, lei: str | N
         existing = ctx.db.find_document(scope, attempt.url, owner, nace)
         if existing:
             return {"status": "exists", "candidate": attempt, "doc": existing}
-        dest = ctx.library.unique(base_dir / name_for(attempt))
+        dest = ctx.library.reserve(base_dir / name_for(attempt))
         try:
             dl = ctx.http.download(attempt.url, dest, expect=attempt.expect,
                                    check_robots=attempt.source not in API_SOURCES)
@@ -192,6 +192,8 @@ def _fetch_one(ctx, cand: Candidate, *, scope: str, base_dir: Path, lei: str | N
             errors.append(str(err))
             ctx.log("warn", f"Download fehlgeschlagen: {err}", url=attempt.url)
             continue
+        finally:
+            ctx.library.release(dest)  # the file now exists (or the download failed): no longer reserved
         duplicate = ctx.db.find_by_hash(scope, dl.sha256, owner, nace)
         if duplicate:
             dest.unlink(missing_ok=True)

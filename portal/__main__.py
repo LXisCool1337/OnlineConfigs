@@ -11,7 +11,7 @@ from .app import App
 from .config import load_settings
 from . import financials, fulltext
 from .pipeline import CATEGORY_LABELS
-from .resolver import Resolver
+from .resolver import NotFound, Resolver
 
 COLORS = {"ok": "\033[32m", "warn": "\033[33m", "error": "\033[31m", "stage": "\033[1m", "summary": "\033[1m",
           "hint": "\033[36m"}
@@ -93,7 +93,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--limit", type=int, default=20)
 
     args = parser.parse_args(argv)
-    settings = load_settings(args.config)
+    try:
+        settings = load_settings(args.config)
+    except ValueError as err:  # invalid value in portal.toml or a PORTAL_* variable
+        parser.error(f"Ungültige Einstellung: {err}")
     app = App(settings, echo=echo)
 
     if args.command == "serve":
@@ -124,16 +127,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "export":
-        company = app.db.company(args.lei)
+        company = app.db.company(args.lei.strip().upper())
         if not company:
             print("Unbekannte LEI")
             return 1
-        path = app.library.build_zip(app.library.company_dir(company), f"{company['name']}_{company['lei']}")
+        folder = app.library.company_dir(company)
+        if not folder.exists():
+            print("Noch keine Dokumente vorhanden. Zuerst: python -m portal fetch", company["lei"])
+            return 1
+        path = app.library.build_zip(folder, f"{company['name']}_{company['lei']}")
         print(path)
         return 0
 
     if args.command == "figures":
-        company = Resolver(app.context(echo=echo)).resolve(query=args.query)
+        try:
+            company = Resolver(app.context(echo=echo)).resolve(query=args.query)
+        except NotFound as err:
+            print(err)
+            return 1
         financials.extract(app.context(echo=echo), company["lei"])
         if args.csv:
             sys.stdout.write(financials.csv_for(app.db, company["lei"], args.csv))
