@@ -15,8 +15,9 @@ from portal.app import App
 from portal.config import Settings
 from portal.financials import derive
 from portal.net import ContentError, _decode_body, _retry_after
+from portal.resolver import NotFound, Resolver, relevance
 from portal.storage import Library
-from tests.fakeweb import COMPANY
+from tests.fakeweb import COMPANY, LOOKALIKE
 from tests.test_pipeline import PipelineTestCase
 
 
@@ -237,6 +238,70 @@ class PipelineRobustnessTests(PipelineTestCase):
     def test_search_with_stray_asterisk(self):
         self.run_company(include={"pdf": False})
         self.assertTrue(fulltext.search(self.app.db, "Zoll* *", lei=COMPANY["lei"]))
+
+
+class NameSearchTests(PipelineTestCase):
+    def test_relevance(self):
+        self.assertEqual(relevance("GEA Group Aktiengesellschaft", "GEA Group"), 3)   # legal form ignored
+        self.assertEqual(relevance("GEA Group Holding GmbH", "gea group"), 2)
+        self.assertEqual(relevance("Versorgungskasse der GEA Group AG", "GEA Group"), 1)
+        self.assertEqual(relevance("GET GROUP", "GEA Group"), 0)                     # GLEIF fuzzy look-alike
+        self.assertEqual(relevance("GE-GROUP S.R.L.", "GEA Group"), 0)
+
+    def test_full_text_match_beats_fuzzy_lookalike(self):
+        resolver = Resolver(self.app.context())
+        results, _warning = resolver.search("Beispiel Maschinenbau")
+        leis = [r["lei"] for r in results]
+        self.assertEqual(leis[0], COMPANY["lei"])       # was missing: only fuzzy completions were asked
+        self.assertIn(LOOKALIKE["lei"], leis)            # typo tolerance stays, ranked below
+        self.assertEqual(resolver.resolve(query="Beispiel Maschinenbau")["lei"], COMPANY["lei"])
+
+    def test_no_guessing_on_lookalikes(self):
+        with self.assertRaises(NotFound) as caught:
+            Resolver(self.app.context()).resolve(query="Gibt es nicht GmbH")
+        self.assertIn("Ähnliche Namen", str(caught.exception))
+        self.assertIsNone(self.app.db.company(LOOKALIKE["lei"]))
+
+
+class ReportDiscoveryTests(unittest.TestCase):
+    def cand(self, url, year, category="annual_report", source="irsite", score=70.0):
+        from portal.connectors.base import Candidate
+        return Candidate(url=url, category=category, source=source, fiscal_year=year, fy_label=str(year),
+                         language="en", score=score)
+
+    def test_url_pattern_fills_missing_years(self):
+        from portal.pipeline import pattern_candidates
+        found = [self.cand("https://cdn.example.com/-/media/ar/2025/annual-report-2025-en.pdf?rev=abc", 2025),
+                 self.cand("https://www.example.com/agm/annual-report-2021-en.pdf", 2021),
+                 self.cand("https://www.example.com/hv/jahresabschluss-2022.pdf", 2022, "single_entity_statements")]
+        guesses = pattern_candidates(found, [2022, 2024])
+        self.assertEqual([g.url for g in guesses], [
+            "https://cdn.example.com/-/media/ar/2022/annual-report-2022-en.pdf",   # no ?rev= of another file
+            "https://cdn.example.com/-/media/ar/2024/annual-report-2024-en.pdf",
+            "https://www.example.com/agm/annual-report-2022-en.pdf",
+            "https://www.example.com/agm/annual-report-2024-en.pdf"])
+        self.assertTrue(all(g.source == "pattern" and g.score == 50.0 for g in guesses))
+        self.assertEqual(pattern_candidates([self.cand("https://x.com/latest-report.pdf", 2025)], [2024]), [])
+
+    def test_single_entity_statements_are_the_fallback(self):
+        from portal.pipeline import select_company_candidates
+        report = self.cand("https://x.com/annual-report-2022-en.pdf", 2022, source="pattern", score=50.0)
+        hgb = self.cand("https://x.com/jahresabschluss-2022.pdf", 2022, "single_entity_statements")
+        chosen = select_company_candidates([report, hgb], prefs=["en"], all_languages=False,
+                                           include_sustainability=False)
+        self.assertEqual([c.url for c in chosen], [report.url])
+        self.assertEqual([a.url for a in chosen[0].alternates], [hgb.url])
+
+    def test_parent_statements_are_not_the_annual_report(self):
+        from datetime import date
+        from portal.classify import LinkInfo, classify_report_link
+        def category(anchor):
+            return classify_report_link(LinkInfo(url="https://x.com/doc.pdf", anchor=anchor), date(2026, 9, 1)).category
+        self.assertEqual(category("Agenda item 1 – Annual Financial Statements 2022 of GEA Group AG (German only)"),
+                         "single_entity_statements")
+        self.assertEqual(category("Annual Report and Annual Financial Statements 2022"), "annual_report")
+        self.assertEqual(category("Consolidated Annual Financial Statements 2022"), "annual_report")
+        self.assertEqual(category("Agenda item 1 | Annual Report 2021"), "annual_report")
 
 
 if __name__ == "__main__":

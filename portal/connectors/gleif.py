@@ -76,19 +76,26 @@ class Gleif:
         return sorted({(r.get("attributes") or {}).get("isin") for r in payload.get("data") or []} - {None})
 
     def search(self, name: str, limit: int = 10) -> list[dict]:
-        """Fuzzy name search; returns parsed records (subsidiaries included, ranked by the caller)."""
+        """Name search; returns parsed records (subsidiaries included, ranked by the caller).
+
+        Full-text completions come first: they find names that contain the words ("GEA Group" ->
+        "GEA Group Aktiengesellschaft"). Fuzzy completions compare whole names by edit distance and
+        only add typo tolerance; on their own they return look-alikes such as "GET GROUP"."""
         leis: list[str] = []
-        try:
-            payload = self._get("/fuzzycompletions", {"field": "entity.legalName", "q": name})
+        for endpoint, field in (("/autocompletions", "fulltext"), ("/fuzzycompletions", "entity.legalName")):
+            if len(leis) >= limit:
+                break
+            try:
+                payload = self._get(endpoint, {"field": field, "q": name})
+            except HttpError:
+                continue
             for item in payload.get("data") or []:
                 rel = ((item.get("relationships") or {}).get("lei-records") or {}).get("data") or {}
                 lei = rel.get("id") if isinstance(rel, dict) else None
                 if lei and lei not in leis:
                     leis.append(lei)
-        except HttpError:
-            leis = []
         if leis:
-            records = {r["lei"]: r for r in self.by_leis(leis[:limit])}
+            records = {r["lei"]: r for r in self.by_leis(leis[:2 * limit])}
             return [records[l] for l in leis if l in records]
         payload = self._get("/lei-records", {"filter[fulltext]": name, "page[size]": limit})
         return [parse_record(r) for r in payload.get("data") or []]

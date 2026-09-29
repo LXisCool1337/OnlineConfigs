@@ -35,6 +35,10 @@ PEER_FR = {"lei": make_lei("969500EXEMPLEEMBAL"), "name": "Exemple Emballage SA"
 PEER_US = {"lei": make_lei("549300SAMPLEBOTTLN"), "name": "Sample Bottling Inc.", "country": "US",
            "isin": make_isin("US0000SMPLB")}
 ENTITIES = [COMPANY, PEER_IT, PEER_FR, PEER_US]
+# Like GLEIF's real /fuzzycompletions (edit distance on the whole legal name), the fake one returns only
+# look-alike names; the company itself is found by /autocompletions (full text).
+LOOKALIKE = {"lei": make_lei("529900DECOYBEISPIL"), "name": "Beispil Mashinenbau GmbH", "country": "AT",
+             "isin": ""}
 TODAY = "2026-09-27"
 
 
@@ -376,11 +380,14 @@ class FakeWeb:
         # GLEIF
         if path.startswith("/gleif/"):
             sub = path[len("/gleif"):]
-            by_lei = {e["lei"]: e for e in ENTITIES}
-            if sub == "/fuzzycompletions":
+            by_lei = {e["lei"]: e for e in ENTITIES + [LOOKALIKE]}
+            if sub in ("/fuzzycompletions", "/autocompletions"):
                 term = (q.get("q") or [""])[0].lower()
-                hits = [e for e in ENTITIES if term and term in e["name"].lower()]
-                return j({"data": [{"type": "fuzzycompletions", "attributes": {"value": e["name"]},
+                if sub == "/fuzzycompletions":
+                    hits = [LOOKALIKE] if term else []
+                else:
+                    hits = [e for e in ENTITIES if term and term in e["name"].lower()]
+                return j({"data": [{"type": sub.strip("/"), "attributes": {"value": e["name"]},
                                     "relationships": {"lei-records": {"data": {"type": "lei-records", "id": e["lei"]}}}}
                                    for e in hits]})
             if sub == "/lei-records":

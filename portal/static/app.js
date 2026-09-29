@@ -62,7 +62,7 @@ function fmtDate(iso) {
 
 const SOURCE_LABELS = {
   esef: "ESEF (filings.xbrl.org)", irsite: "IR-Website", websearch: "Websuche", manual: "manuell",
-  eurostat: "Eurostat", openalex: "OpenAlex", curated: "Verband/Behörde",
+  eurostat: "Eurostat", openalex: "OpenAlex", curated: "Verband/Behörde", pattern: "IR-Website (URL-Muster)",
 };
 const STATUS_LABELS = {
   queued: ["wartet", ""], running: ["läuft", "warn"], cancelling: ["bricht ab", "warn"], done: ["fertig", "ok"],

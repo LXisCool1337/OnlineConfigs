@@ -102,6 +102,29 @@ def parse_manual_urls(value, today: date) -> list[Candidate]:
     return out
 
 
+def pattern_candidates(cands: list[Candidate], years: list[int], templates: int = 2) -> list[Candidate]:
+    """Guess report links for ``years`` from the links of reports already found.
+
+    Many IR sites load older years by JavaScript (invisible to the crawler) but store every year under
+    the same path, e.g. .../annual-report/2025/annual-report-2025-en.pdf. The newest reports whose URL
+    contains their fiscal year serve as templates; a wrong guess simply fails to download."""
+    found = sorted((c for c in cands if c.category == "annual_report" and c.fiscal_year
+                    and c.source in ("irsite", "manual")), key=lambda c: (-c.fiscal_year, -c.score))
+    seen, out = set(), []
+    for base in found:
+        url = base.url.split("#", 1)[0].split("?", 1)[0]  # version parameters belong to one file only
+        year = str(base.fiscal_year)
+        if len(seen) >= templates or year not in url or url.replace(year, "{}") in seen:
+            continue
+        seen.add(url.replace(year, "{}"))
+        for missing in years:
+            out.append(Candidate(url=url.replace(year, str(missing)), category="annual_report", source="pattern",
+                                 fiscal_year=missing, fy_label=str(missing), language=base.language,
+                                 title=f"Geschäftsbericht {missing} (nach URL-Muster des Berichts {base.fy_label or year})",
+                                 score=base.score - 20, meta={"pattern_from": base.url}))
+    return out
+
+
 def _dedupe(cands: list[Candidate]) -> list[Candidate]:
     best: dict[str, Candidate] = {}
     for c in cands:
@@ -129,9 +152,10 @@ def select_company_candidates(cands: list[Candidate], *, prefs: list[str], all_l
             continue
         annual = sorted((i for i in items if i.category == "annual_report" and i.source != "esef"
                          and i.source != "manual"), key=lambda c: -c.score)
+        single = sorted((i for i in items if i.category == "single_entity_statements" and i.source != "manual"),
+                        key=lambda c: -c.score)
         if not annual:
-            annual = sorted((i for i in items if i.category == "single_entity_statements" and i.source != "manual"),
-                            key=lambda c: -c.score)
+            annual, single = single, []
         if annual and not any(m.category in ANNUAL_CATEGORIES for m in manual):
             if all_languages:
                 picked = False
@@ -145,7 +169,7 @@ def select_company_candidates(cands: list[Candidate], *, prefs: list[str], all_l
                     annual[0].alternates = annual[1:4]
                     chosen.append(annual[0])
             else:
-                annual[0].alternates = annual[1:4]
+                annual[0].alternates = annual[1:4] + single[:1]  # parent's statements if the report fails
                 chosen.append(annual[0])
         if include_sustainability:
             sustain = sorted((i for i in items if i.category == "sustainability_report"), key=lambda c: -c.score)
@@ -190,7 +214,10 @@ def _fetch_one(ctx, cand: Candidate, *, scope: str, base_dir: Path, lei: str | N
             continue
         except (HttpError, ContentError) as err:
             errors.append(str(err))
-            ctx.log("warn", f"Download fehlgeschlagen: {err}", url=attempt.url)
+            if attempt.source == "pattern":
+                ctx.log("info", f"Nach URL-Muster nicht vorhanden: {attempt.fy_label}", url=attempt.url)
+            else:
+                ctx.log("warn", f"Download fehlgeschlagen: {err}", url=attempt.url)
             continue
         finally:
             ctx.library.release(dest)  # the file now exists (or the download failed): no longer reserved
@@ -288,6 +315,16 @@ def run_company(ctx, params: dict, runner=None) -> dict:
         cands += IrSite(ctx).discover(company, years, prefs, today)
 
     cands += parse_manual_urls(params.get("urls"), today)
+
+    if include["pdf"]:
+        with_report = {c.fiscal_year for c in cands if c.category == "annual_report"}
+        lacking = [y for y in range(today.year - n, today.year) if y not in with_report]
+        known = {c.url for c in cands}
+        guesses = [g for g in pattern_candidates(cands, lacking) if g.url not in known]
+        if guesses:
+            ctx.log("info", f"{len(guesses)} Links für fehlende Jahre nach dem URL-Muster gefundener Berichte",
+                    years=lacking)
+            cands += guesses
 
     have = {c.fiscal_year for c in cands if c.category in ANNUAL_CATEGORIES}
     esef_years = {c.fiscal_year for c in cands if c.source == "esef"}

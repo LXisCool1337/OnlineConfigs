@@ -2,14 +2,32 @@
 
 from __future__ import annotations
 
+import re
+
+from .classify import fold
 from .connectors.gleif import Gleif
 from .connectors.wikidata import Wikidata
-from .identifiers import EU_EEA, detect
+from .identifiers import EU_EEA, detect, short_name
 from .net import HttpError
 
 
 class NotFound(Exception):
     pass
+
+
+def relevance(name: str, query: str) -> int:
+    """How well a company name answers a name search: 3 exact (legal form ignored), 2 starts with the
+    query, 1 contains every query word (as a word start), 0 only similar."""
+    q, n = fold(query), fold(name)
+    if not q:
+        return 0
+    if n == q or fold(short_name(name)) == q:
+        return 3
+    if n.startswith(q + " "):
+        return 2
+    if all(re.search(r"(?<![a-z0-9])" + re.escape(w), n) for w in q.split()):
+        return 1
+    return 0
 
 
 class Resolver:
@@ -58,7 +76,8 @@ class Resolver:
                         results[rec["lei"]] = known or {**rec, "listed": 0, "has_esef": 0}
             except HttpError as err:
                 warning = f"GLEIF nicht erreichbar ({err.status or 'Netzwerk'}); nur lokale Treffer."
-        ranked = sorted(results.values(), key=lambda c: (not c.get("listed"), not c.get("has_esef"),
+        ranked = sorted(results.values(), key=lambda c: (-relevance(c.get("name") or "", value) if kind == "name" else 0,
+                                                         not c.get("listed"), not c.get("has_esef"),
                                                          (c.get("country") or "") not in EU_EEA, c.get("name") or ""))
         return [self._mark(c) for c in ranked[:limit]], warning
 
@@ -94,6 +113,11 @@ class Resolver:
         if not results:
             raise NotFound(f"Kein Unternehmen zu „{value}“ gefunden")
         best = results[0]
+        if relevance(best.get("name") or "", value) == 0:
+            # Only look-alike names (GLEIF's fuzzy search always returns some): never guess a company.
+            similar = ", ".join(f"{r['name']} ({r['lei']})" for r in results[:3])
+            raise NotFound(f"Kein Unternehmen zu „{value}“ gefunden. Ähnliche Namen: {similar}. "
+                           "Bitte genauen Namen, ISIN oder LEI angeben.")
         if len(results) > 1:
             self.ctx.log("info", f"Mehrdeutiger Name, gewählt: {best['name']} ({best['lei']})",
                          alternatives=[f"{r['name']} ({r['lei']})" for r in results[1:5]])

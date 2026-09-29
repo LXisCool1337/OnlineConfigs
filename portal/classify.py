@@ -129,6 +129,11 @@ SINGLE_ENTITY = _terms([
     "separate financial statements", "comptes sociaux", "enkelvoudige", "bilancio separato", "bilancio d'esercizio",
     "bilancio di esercizio", "cuentas anuales individuales", "moderbolag", "moderselskab", "emoyhtiö",
 ])
+# German issuers publish the parent's HGB statements as "Annual Financial Statements" (often "DE only"),
+# next to the group's annual report. Only a sign of single-entity statements when nothing says "annual
+# report" (strength 3) or "consolidated".
+SINGLE_ENTITY_WEAK = _terms(["annual financial statements", "de only", "german only", "nur deutsch"])
+GROUP = _terms(["consolidated", "konzern", "consolides", "consolidato", "consolidadas", "geconsolideerde"])
 SUMMARY = _terms([
     "kurzbericht", "kurzfassung", "summary", "highlights", "auszug", "extract", "excerpt", "magazine", "magazin",
     "letter to shareholders", "aktionärsbrief", "brief an die aktionäre", "at a glance", "auf einen blick",
@@ -308,16 +313,16 @@ def classify_report_link(info: LinkInfo, today: date | None = None) -> Guess:
     has = {name: any(True for _ in _find(terms, primary)) for name, terms in (
         ("interim", INTERIM), ("remuneration", REMUNERATION), ("governance", GOVERNANCE), ("agm", AGM),
         ("presentation", PRESENTATION), ("press", PRESS), ("sustainability", SUSTAINABILITY),
-        ("single", SINGLE_ENTITY))}
-    if strength == 0 and not any(has.values()):
+        ("single", SINGLE_ENTITY), ("single_weak", SINGLE_ENTITY_WEAK), ("group", GROUP))}
+    if strength == 0 and not any(v for k, v in has.items() if k not in ("single_weak", "group")):
         # The link text is generic ("PDF", "Download", "2016"): fall back to the surrounding text.
         strength, term_lang = _annual_strength(context)
         strength = max(0, strength - 1) if strength == 3 else strength
         has = {name: any(True for _ in _find(terms, context)) for name, terms in (
             ("interim", INTERIM), ("remuneration", REMUNERATION), ("governance", GOVERNANCE), ("agm", AGM),
             ("presentation", PRESENTATION), ("press", PRESS), ("sustainability", SUSTAINABILITY),
-            ("single", SINGLE_ENTITY))}
-        if strength or any(has.values()):
+            ("single", SINGLE_ENTITY), ("single_weak", SINGLE_ENTITY_WEAK), ("group", GROUP))}
+        if strength or any(v for k, v in has.items() if k not in ("single_weak", "group")):
             guess.flags.add("from_context")
 
     if has["interim"]:
@@ -334,7 +339,8 @@ def classify_report_link(info: LinkInfo, today: date | None = None) -> Guess:
         guess.category = "press_release"
     elif has["sustainability"] and strength < 3:
         guess.category = "sustainability_report"
-    elif has["single"] and not any(True for _ in _find(FULL, primary)):
+    elif (has["single"] or (has["single_weak"] and strength < 3 and not has["group"])) \
+            and not any(True for _ in _find(FULL, primary)):
         guess.category = "single_entity_statements"
     elif strength > 0:
         guess.category = "annual_report"
