@@ -230,6 +230,16 @@ class ServerTests(unittest.TestCase):
         resp, body = self.request("GET", "/")
         self.assertIn(b'data-tab="value"', body)
 
+    def test_08_wildcard_hosts(self):
+        self.app.settings.allowed_hosts = ["*.app.github.dev"]     # GitHub Codespaces port forwarding
+        try:
+            for host, status in (("name-8765.app.github.dev", 200), ("app.github.dev", 421),
+                                 ("x.app.github.dev.evil.example", 421), ("evil.example", 421)):
+                resp, _ = self.request("GET", "/api/health", headers={"Host": host})
+                self.assertEqual(resp.status, status, host)
+        finally:
+            self.app.settings.allowed_hosts = []
+
 
 if __name__ == "__main__":
     unittest.main()

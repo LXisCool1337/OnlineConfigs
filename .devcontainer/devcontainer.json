@@ -1,0 +1,16 @@
+{
+  "name": "EU-Report-Portal",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "containerEnv": {
+    "PORTAL_ALLOWED_HOSTS": "*.app.github.dev"
+  },
+  "postCreateCommand": "python3 -m portal import-figures DE0006292006 data/ksb_kennzahlen_2020_2025.csv --millions || true",
+  "postAttachCommand": "python3 -m portal serve",
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": { "label": "EU-Report-Portal", "onAutoForward": "openBrowser" }
+  },
+  "customizations": {
+    "codespaces": { "openFiles": ["portal/README.md"] }
+  }
+}

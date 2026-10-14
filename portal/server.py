@@ -396,8 +396,12 @@ def make_handler(app):
             host = (self.headers.get("Host") or "").lower()
             port = self.server.server_address[1]
             allowed = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
-            allowed |= {h.lower() for h in app.settings.allowed_hosts}
-            return host in allowed
+            patterns = {h.lower() for h in app.settings.allowed_hosts}
+            if host in allowed or host in patterns:
+                return True
+            # "*.app.github.dev" admits forwarded addresses such as name-8765.app.github.dev (GitHub Codespaces)
+            name = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+            return any(p.startswith("*.") and name.endswith(p[1:]) and len(name) > len(p) - 1 for p in patterns)
 
         def _authorized(self) -> bool:
             token = app.settings.access_token

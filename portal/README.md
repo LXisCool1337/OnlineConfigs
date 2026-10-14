@@ -10,6 +10,8 @@ Das Portal nutzt nur die Python-Standardbibliothek (ab 3.11). Es gibt nichts zu 
 python3 -m portal serve --open
 ```
 
+**Ohne eigenen Rechner:** [In GitHub Codespaces öffnen](https://codespaces.new/LXisCool1337/OnlineConfigs?ref=claude/wonderful-bell-u8pbq1). Der Codespace installiert nichts, übernimmt die KSB-Kennzahlen aus `data/`, startet das Portal und öffnet es im Browser (Adresse `…-8765.app.github.dev`, nur für dich sichtbar). Falls sich kein Fenster öffnet: unten im Reiter **Ports** auf die Adresse bei 8765 klicken.
+
 Das öffnet http://localhost:8765. Beim ersten Start unter **Einstellungen** eine Kontakt-E-Mail eintragen: Sie wird im User-Agent an die Datenquellen gesendet, und Wikidata und OpenAlex erwarten das.
 
 1. **Unternehmen** suchen: Name, ISIN (z. B. `DE0006335003`) oder LEI.
